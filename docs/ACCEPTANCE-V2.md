@@ -43,7 +43,7 @@
 | `hub/core/api.ts` | 6 个 mission 工具方法（`create_mission`/`get_mission`/`plan_mission`/`dispatch_mission`/`final_verdict`/`write_report`） |
 | `hub/mcp/server.ts` | 同上 6 个 MCP 工具（工具名与规格一致），instructions 补一句 |
 | `hub/scheduler/scheduler.ts` | `advanceMissions`、`dispatchLeadTurns`（intake/integrating 拉 lead 回合）、`pickAgent` 尊重 `preferred_agent`、队友入册 |
-| `hub/core/config.ts` | `max_concurrent_sessions` 4→16；新增 `mission_lead_agent`/`mission_max_depth`/`reassign_after_rejections` |
+| `hub/core/config.ts` | `max_concurrent_sessions` 4→0（不限）；新增 `mission_lead_agent`/`mission_max_depth`/`reassign_after_rejections` |
 | `hub/roles/cards.ts` | `lead` 角色卡（can_write_code=false / can_implement=false / can_review=true / can_merge=true） |
 | `hub/core/init.ts`、`hub/adapters/detect.ts`、`cli/human.ts` | 每个 AgentCard 默认带 `lead` 能力；`mesh-human` 也可当 lead；`mesh status` 显示进行中的 mission |
 | `cli/mesh.ts` | 9 条新命令路由 + help |

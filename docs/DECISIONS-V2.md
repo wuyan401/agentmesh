@@ -97,6 +97,13 @@ V1 的 `merged` 是终态。V2 的二次验收要能打回一张**已合并**的
 `reassign_after_rejections: 2`（M2 用）、`mission_max_depth: 3`、`mission_lead_agent: null`。
 其余上限（任务数、轮次、agent 数）**没有**加任何默认限制。
 
+**交付时修正（最终口径）**：用户要的是「没有任何限制」，16 和 3 仍是硬上限，所以两者默认值都改成
+`0 = 不限`：`max_concurrent_sessions: 0`、`mission_max_depth: 0`。
+`0` 必须走显式分支，不能靠减法——`budget = max - running` 在 0 时会算成「零个名额」把整个看板冻住，
+所以 `scheduler.ts` 里写成 `maxSessions > 0 ? max(0, maxSessions - running) : Infinity`，
+`missions.ts` 里写成 `maxDepth > 0 && depth + 1 >= maxDepth`。
+要恢复有限上限，把这两个值改成正数即可，无需改代码。
+
 ## D12 · JSON 读写容忍 UTF-8 BOM
 
 验收跑的时候被现实打了一巴掌：Windows PowerShell 的 `Set-Content -Encoding UTF8` 会写 BOM，

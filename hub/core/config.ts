@@ -41,7 +41,8 @@ export const DEFAULT_CONFIG: MeshConfig = {
   coordinator_agent: null,
   auto_integrate: true,
   auto_review: true,
-  // V2 §6: no artificial limits by default. 16 is "enough", not a narrative limit.
+  // 用户的原话是「没有任何限制」。0 = 不限，不要把它改成有限默认值：
+  // 任何正数在这里都会变成新的硬上限（D11 修正）。
   max_concurrent_sessions: 0, // 0 = unlimited: the user asked for no caps, only scope review stays
   dispatch_interval_ms: 3000,
   context_level: 'standard',

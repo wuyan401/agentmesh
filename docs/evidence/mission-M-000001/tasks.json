@@ -1,0 +1,1118 @@
+{
+  "mission_id": "M-000001",
+  "title": "给项目加三个纯函数小工具（格式化时长 / slug / 预算规划），每个都要有测试",
+  "status": "completed",
+  "lead_agent": "dsh-02",
+  "rounds": 0,
+  "created_at": "2026-10-28T19:10:53.588Z",
+  "updated_at": "2026-10-28T19:55:20.994Z",
+  "report_at": "2026-10-28T19:55:20.994Z",
+  "acceptance": [
+    "三个函数都能从 src/ 里 import",
+    "每个函数都有自己的测试且 node --test 能跑绿",
+    "不新增任何依赖"
+  ],
+  "teammates": [
+    {
+      "agent_id": "dsh-02",
+      "display_name": "DSH (lead seat)",
+      "role_in_mission": "lead",
+      "is_lead": true,
+      "personality": "",
+      "strengths": [],
+      "weaknesses": [],
+      "quality_score": 60,
+      "cost_tier": 2,
+      "reliability": 70,
+      "task_ids": [],
+      "reviewed": [],
+      "enabled": true,
+      "success_rate": null
+    },
+    {
+      "agent_id": "hermes-01",
+      "display_name": "Hermes Agent",
+      "role_in_mission": "实现 T-000001, T-000002",
+      "is_lead": false,
+      "personality": "",
+      "strengths": [
+        "审查",
+        "边界条件",
+        "文档"
+      ],
+      "weaknesses": [],
+      "quality_score": 82,
+      "cost_tier": 3,
+      "reliability": 100,
+      "task_ids": [
+        "T-000001",
+        "T-000002"
+      ],
+      "reviewed": [
+        "T-000003",
+        "T-000004",
+        "T-000005"
+      ],
+      "enabled": true,
+      "success_rate": 100
+    },
+    {
+      "agent_id": "dsh-01",
+      "display_name": "DeepSeek Harness",
+      "role_in_mission": "实现 T-000003, T-000004, T-000005",
+      "is_lead": false,
+      "personality": "",
+      "strengths": [
+        "TypeScript",
+        "纯函数",
+        "测试"
+      ],
+      "weaknesses": [],
+      "quality_score": 70,
+      "cost_tier": 2,
+      "reliability": 100,
+      "task_ids": [
+        "T-000003",
+        "T-000004",
+        "T-000005"
+      ],
+      "reviewed": [
+        "T-000001",
+        "T-000002"
+      ],
+      "enabled": true,
+      "success_rate": 100
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "T-000001",
+      "title": "契约骨架：零依赖 ESM 项目定义（package.json）",
+      "role": "backend_dev",
+      "created_by": "S-000005",
+      "created_at": "2026-10-28T19:17:50.378Z",
+      "updated_at": "2026-10-28T19:30:20.393Z",
+      "status": "merged",
+      "depends_on": [],
+      "context_package": ".mesh/context/T-000001.md",
+      "context_level": "standard",
+      "scope": {
+        "write": [
+          "package.json"
+        ],
+        "read": [
+          "README.md"
+        ]
+      },
+      "acceptance": [
+        "package.json 是合法 UTF-8 JSON，字段含 name（m5-tools）、version、private:true、type:\"module\"、scripts.test:\"node --test\"",
+        "不含 dependencies / devDependencies / peerDependencies / optionalDependencies（字段即使存在也必须为空对象）",
+        "不创建 package-lock.json、node_modules、tsconfig 或任何 build/lint 配置",
+        "用可用运行时执行 node -p \"require('./package.json').type + ' ' + require('./package.json').scripts.test\" 输出 'module node --test'，把命令与输出贴进提交说明（运行时路径见验收 5）",
+        "运行时说明：node 不在 PATH，用 D:\\AI\\DSH\\apps\\desktop\\.desktop-build\\development\\home\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\node\\bin\\node.exe；若该路径不可用，如实记录报错，不得伪造输出",
+        "本卡只写 package.json：不创建 src/、test/ 下任何文件，不改 README.md"
+      ],
+      "estimate": "1-session",
+      "base_commit": "373256d192e4e264b03e18d632a07ca0142209b6",
+      "branch": "mesh/T-000001",
+      "worktree": ".mesh/worktrees/T-000001",
+      "claimed_by": "S-000008",
+      "implementer_agent": "hermes-01",
+      "submission": {
+        "commit": "5d4d1df30affbfb343bd07d6af6440a42ab95222",
+        "branch": "mesh/T-000001",
+        "summary": "T-000001 完成：新增 package.json（唯一改动文件，commit 5d4d1df on mesh/T-000001）。\n\n内容：{\"name\":\"m5-tools\",\"version\":\"1.0.0\",\"private\":true,\"type\":\"module\",\"description\":\"...\",\"scripts\":{\"test\":\"node --test\"}}；无 dependencies/devDependencies/peerDependencies/optionalDependencies（四个字段均不存在，非空对象也没有）；未创建 package-lock.json / node_modules / tsconfig / 任何 build 或 lint 配置；未创建 src/、test/ 文件；未改 README.md（git show --stat HEAD 显示仅 package.json +10）。\n\n验收 4 实测（验收 5 指定运行时，该路径存在，93,580,104 字节）：\ncwd = .mesh/worktrees/T-000001\n命令: D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe -p \"require('./package.json').type + ' ' + require('./package.json').scripts.test\"\n输出: module node --test\n(exit 0)\n\n补充自检：JSON.parse 通过；UTF-8 字节往返一致（Buffer.from(txt,\"utf8\").equals(buf) === true）；顶层键 name,version,private,type,description,scripts。",
+        "submitted_at": "2026-10-28T19:23:13.136Z",
+        "session_id": "S-000008",
+        "files": [
+          "package.json"
+        ]
+      },
+      "reviews": [
+        "R-0001"
+      ],
+      "merge": {
+        "commit": "5d4d1df30affbfb343bd07d6af6440a42ab95222",
+        "merge_commit": "682651faa3f0cb880632423f3dbeb343f46d31c8",
+        "merged_at": "2026-10-28T19:30:20.393Z",
+        "session_id": "S-000010",
+        "mode": "strict",
+        "stripped": [],
+        "files": [
+          "package.json"
+        ]
+      },
+      "blocked_reason": null,
+      "parent": null,
+      "tags": [
+        "mission:M-000001"
+      ],
+      "preferred_agent": "dsh-01",
+      "rejection_count": 0,
+      "rejected_by": [],
+      "history": [
+        {
+          "at": "2026-10-28T19:17:50.378Z",
+          "from": null,
+          "to": "draft",
+          "by": "S-000005",
+          "note": "created"
+        },
+        {
+          "at": "2026-10-28T19:18:10.196Z",
+          "from": "draft",
+          "to": "ready",
+          "by": "hub",
+          "note": "published"
+        },
+        {
+          "at": "2026-10-28T19:20:34.376Z",
+          "from": "ready",
+          "to": "claimed",
+          "by": "S-000008",
+          "note": "bound by scheduler"
+        },
+        {
+          "at": "2026-10-28T19:23:13.137Z",
+          "from": "claimed",
+          "to": "in_progress",
+          "by": "S-000008",
+          "note": "submitted"
+        },
+        {
+          "at": "2026-10-28T19:23:13.138Z",
+          "from": "in_progress",
+          "to": "submitted",
+          "by": "S-000008",
+          "note": "T-000001 完成：新增 package.json（唯一改动文件，commit 5d4d1df on mesh/T-000001）。\n\n内容：{\"name\":\"m5-tools\",\"version\":\"1.0.0\",\"private\":true,\"type\":\"module\",\"description\":\"...\",\"scripts\":{\"test\":\"node --test\"}}；无 dep"
+        },
+        {
+          "at": "2026-10-28T19:29:54.417Z",
+          "from": "submitted",
+          "to": "reviewing",
+          "by": "S-000009"
+        },
+        {
+          "at": "2026-10-28T19:30:16.751Z",
+          "from": "reviewing",
+          "to": "approved",
+          "by": "S-000009",
+          "note": "R-0001 approved"
+        },
+        {
+          "at": "2026-10-28T19:30:20.393Z",
+          "from": "approved",
+          "to": "merged",
+          "by": "S-000010",
+          "note": "strict merge 682651fa"
+        }
+      ],
+      "reviews_full": [
+        {
+          "review_id": "R-0001",
+          "task_id": "T-000001",
+          "reviewer_session": "S-000009",
+          "reviewer_agent": "dsh-01",
+          "implementer_agent": "hermes-01",
+          "verdict": "approved",
+          "criteria": [
+            {
+              "criterion": "package.json 是合法 UTF-8 JSON，字段含 name（m5-tools）、version、private:true、type:\"module\"、scripts.test:\"node --test\"",
+              "pass": true,
+              "evidence": "沙箱 HEAD=5d4d1df3 读取 package.json（224 字节，无 BOM）。用指定 node 执行 -e 校验：JSON.parse 通过，utf8_roundtrip=true，keys=[\"name\",\"version\",\"private\",\"type\",\"description\",\"scripts\"]，name=\"m5-tools\"、version=\"1.0.0\"、private=true、type=\"module\"、scripts.test=\"node --test\"。命令：<node> -e \"...JSON.parse...\" exit=0。"
+            },
+            {
+              "criterion": "不含 dependencies / devDependencies / peerDependencies / optionalDependencies（字段即使存在也必须为空对象）",
+              "pass": true,
+              "evidence": "同一 node 校验输出 dep_fields []（四个字段均不存在）；Object.keys 显示顶层仅 name,version,private,type,description,scripts。git diff 373256d1..5d4d1df3 -- package.json 显示新增内容无任何依赖字段。"
+            },
+            {
+              "criterion": "不创建 package-lock.json、node_modules、tsconfig 或任何 build/lint 配置",
+              "pass": true,
+              "evidence": "worktree 根目录仅 .git、package.json、README.md（Get-ChildItem -Force）；对 package-lock.json、node_modules、tsconfig.json、.eslintrc*、.prettierrc、rollup/vite/webpack config、.github 逐一 Test-Path 均不存在。git ls-tree -r HEAD 仅 README.md 与 package.json。"
+            },
+            {
+              "criterion": "用可用运行时执行 node -p \"require('./package.json').type + ' ' + require('./package.json').scripts.test\" 输出 'module node --test'，把命令与输出贴进提交说明（运行时路径见验收 5）",
+              "pass": true,
+              "evidence": "本人在 cwd=.mesh/worktrees/T-000001 用指定 node.exe 复跑同一命令：输出严格为 'module node --test'，exit=0。提交说明中贴出的命令与输出与此一致（非伪造）。"
+            },
+            {
+              "criterion": "运行时说明：node 不在 PATH，用 D:\\AI\\DSH\\apps\\desktop\\.desktop-build\\development\\home\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\node\\bin\\node.exe；若该路径不可用，如实记录报错，不得伪造输出",
+              "pass": true,
+              "evidence": "Test-Path 该路径为 True，Get-Item.Length=93580104，与提交说明所称 93,580,104 字节一致；实际调用该二进制完成验收 4，exit=0。未使用其他运行时替代。"
+            },
+            {
+              "criterion": "本卡只写 package.json：不创建 src/、test/ 下任何文件，不改 README.md",
+              "pass": true,
+              "evidence": "git diff 373256d1..5d4d1df3 --stat 仅 'package.json | 10 ++++++++++'；git show --stat HEAD 一致。worktree 中无 src/、test/ 目录。git diff 373256d1..5d4d1df3 -- README.md 输出 0 行，README 与 base 完全一致。git status --porcelain 为空（无未提交残留）。"
+            }
+          ],
+          "notes": "六条 acceptance 全部逐条复核通过。改动范围干净：commit 5d4d1df3 仅新增 package.json（+10 行），未触碰 README.md，无越界文件，无未提交残留。package.json 为合法无 BOM UTF-8 JSON（224 字节，字节往返一致），name=m5-tools / version=1.0.0 / private=true / type=module / scripts.test=node --test 均符合契约，四个依赖字段全部不存在。验收 4 用验收 5 指定的 node.exe（存在，93,580,104 字节）独立复跑，输出精确为 'module node --test'，exit=0，与提交说明一致。工作区无 package-lock.json / node_modules / tsconfig / build 或 lint 配置，也无 src/test 产物。批准合并。",
+          "independent": true,
+          "allow_strip_merge": false,
+          "at": "2026-10-28T19:30:16.748Z",
+          "submission_commit": "5d4d1df30affbfb343bd07d6af6440a42ab95222"
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "S-000008",
+          "agent_id": "hermes-01",
+          "role": "backend_dev",
+          "status": "exited",
+          "created_at": "2026-10-28T19:20:34.372Z",
+          "exit": {
+            "code": 0,
+            "at": "2026-10-28T19:23:17.946Z",
+            "note": "work submitted"
+          }
+        },
+        {
+          "session_id": "S-000009",
+          "agent_id": "dsh-01",
+          "role": "supervisor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:29:33.262Z",
+          "exit": {
+            "code": null,
+            "at": "2026-10-28T19:30:25.570Z",
+            "note": "process exited"
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "T-000002",
+      "title": "formatDuration：秒数格式化为人类可读时长（含独立测试）",
+      "role": "backend_dev",
+      "created_by": "S-000005",
+      "created_at": "2026-10-28T19:18:00.165Z",
+      "updated_at": "2026-10-28T19:32:54.710Z",
+      "status": "merged",
+      "depends_on": [
+        "T-000001"
+      ],
+      "context_package": ".mesh/context/T-000002.md",
+      "context_level": "standard",
+      "scope": {
+        "write": [
+          "src/format-duration.js",
+          "test/format-duration.test.js"
+        ],
+        "read": [
+          "package.json"
+        ]
+      },
+      "acceptance": [
+        "src/format-duration.js 仅命名导出 formatDuration(totalSeconds)；纯函数、无 I/O、无全局状态、不修改入参",
+        "输出规则：0→\"0s\"、59→\"59s\"、60→\"1m\"、90→\"1m 30s\"、3600→\"1h\"、3661→\"1h 1m 1s\"；单位间单空格；省略值为 0 的上级单位",
+        "非法输入（非 number、NaN、Infinity、负数、非整数）抛 RangeError，错误信息含参数名 totalSeconds",
+        "test/format-duration.test.js 用 node:test + node:assert/strict，覆盖验收 2 的 6 个样例与验收 3 的 5 类非法输入（至少 11 个用例）",
+        "用运行时（见 why 的环境备注）在仓库根执行 node --test --test-isolation=none：exit 0、fail 0；提交说明贴出 tests/pass/fail 实际数字",
+        "若运行时被沙箱拒绝，提交说明必须写真实报错（不得伪造），并逐条静态核对验收 2/3 的每个样例在测试里都有对应断言",
+        "不改 package.json、不改其他卡的文件、不新增依赖；用 JSDoc 写明入参契约与输出示例"
+      ],
+      "estimate": "1-session",
+      "base_commit": "682651faa3f0cb880632423f3dbeb343f46d31c8",
+      "branch": "mesh/T-000002",
+      "worktree": ".mesh/worktrees/T-000002",
+      "claimed_by": "S-000011",
+      "implementer_agent": "hermes-01",
+      "submission": {
+        "commit": "c04f54d9a0eb68e3dd4a06b5ad58c78ba95e0baa",
+        "branch": "mesh/T-000002",
+        "summary": "T-000002 完成：新增 src/format-duration.js + test/format-duration.test.js（commit c04f54d on mesh/T-000002），仅命名导出 formatDuration(totalSeconds)，零依赖、纯函数、无 I/O、不改入参，JSDoc 含契约与 6 个输出示例。\n\n验收 5 实测（仓库根 .mesh/worktrees/T-000002，runtime 版本 v24.21.0，路径 D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe）：\n命令: node --test --test-isolation=none\n结果: tests 17 / pass 17 / fail 0 / cancelled 0 / skipped 0，exit code 0，duration 48ms。\n\n验收 2 逐条对应（测试内均有断言）：0→\"0s\"、59→\"59s\"、60→\"1m\"、90→\"1m 30s\"、3600→\"1h\"、3661→\"1h 1m 1s\"；另补 3605→\"1h 5s\"、61→\"1m 1s\"、7200→\"2h\"、86400→\"24h\"，覆盖「省略值为 0 的上级/中间单位」「单位间单空格」。\n验收 3 逐类对应：非 number（'60'、null、undefined、{}、[]、函数）、NaN、Infinity/-Infinity、负数（-1/-60/-3600/-0.5）、非整数（1.5/59.9/90.0001）——均断言 instanceof RangeError 且 message 匹配 /totalSeconds/。\n额外独立核对（绕过测试文件直接 import 调用）：6/6 样例值一致；9 类非法输入全部抛 RangeError 且信息含 totalSeconds；模块导出键仅为 ['formatDuration']。\n\n未改 package.json / README / 其他卡文件，未新增依赖（无 node_modules、无 lockfile）；git show --stat 仅 src/format-duration.js 与 test/format-duration.test.js 两个新文件。",
+        "submitted_at": "2026-10-28T19:31:59.417Z",
+        "session_id": "S-000011",
+        "files": [
+          "src/format-duration.js",
+          "test/format-duration.test.js"
+        ]
+      },
+      "reviews": [
+        "R-0002"
+      ],
+      "merge": {
+        "commit": "c04f54d9a0eb68e3dd4a06b5ad58c78ba95e0baa",
+        "merge_commit": "ae4b1a89d33c9a656f69f822f8eca2e7c743b533",
+        "merged_at": "2026-10-28T19:32:54.710Z",
+        "session_id": "S-000010",
+        "mode": "strict",
+        "stripped": [],
+        "files": [
+          "src/format-duration.js",
+          "test/format-duration.test.js"
+        ]
+      },
+      "blocked_reason": null,
+      "parent": null,
+      "tags": [
+        "mission:M-000001"
+      ],
+      "preferred_agent": "hermes-01",
+      "rejection_count": 0,
+      "rejected_by": [],
+      "history": [
+        {
+          "at": "2026-10-28T19:18:00.165Z",
+          "from": null,
+          "to": "draft",
+          "by": "S-000005",
+          "note": "created"
+        },
+        {
+          "at": "2026-10-28T19:30:20.401Z",
+          "from": "draft",
+          "to": "ready",
+          "by": "hub",
+          "note": "dependency T-000001 merged"
+        },
+        {
+          "at": "2026-10-28T19:30:25.614Z",
+          "from": "ready",
+          "to": "claimed",
+          "by": "S-000011",
+          "note": "bound by scheduler"
+        },
+        {
+          "at": "2026-10-28T19:31:59.419Z",
+          "from": "claimed",
+          "to": "in_progress",
+          "by": "S-000011",
+          "note": "submitted"
+        },
+        {
+          "at": "2026-10-28T19:31:59.419Z",
+          "from": "in_progress",
+          "to": "submitted",
+          "by": "S-000011",
+          "note": "T-000002 完成：新增 src/format-duration.js + test/format-duration.test.js（commit c04f54d on mesh/T-000002），仅命名导出 formatDuration(totalSeconds)，零依赖、纯函数、无 I/O、不改入参，JSDoc 含契约与 6 个输出示例。\n\n验收 5 实测（仓库根 .mesh/workt"
+        },
+        {
+          "at": "2026-10-28T19:32:16.391Z",
+          "from": "submitted",
+          "to": "reviewing",
+          "by": "S-000014"
+        },
+        {
+          "at": "2026-10-28T19:32:52.193Z",
+          "from": "reviewing",
+          "to": "approved",
+          "by": "S-000014",
+          "note": "R-0002 approved"
+        },
+        {
+          "at": "2026-10-28T19:32:54.710Z",
+          "from": "approved",
+          "to": "merged",
+          "by": "S-000010",
+          "note": "strict merge ae4b1a89"
+        }
+      ],
+      "reviews_full": [
+        {
+          "review_id": "R-0002",
+          "task_id": "T-000002",
+          "reviewer_session": "S-000014",
+          "reviewer_agent": "dsh-01",
+          "implementer_agent": "hermes-01",
+          "verdict": "approved",
+          "criteria": [
+            {
+              "criterion": "src/format-duration.js 仅命名导出 formatDuration(totalSeconds)；纯函数、无 I/O、无全局状态、不修改入参",
+              "pass": true,
+              "evidence": "独立 import 后 Object.keys(mod) === ['formatDuration']，typeof 为 function；src 全文仅 1 条 export 语句（第 37 行 export function formatDuration），无 import/require/fetch/fs/process/globalThis 命中；函数仅做本地 Math.floor/% 运算并返回局部 parts.join，无模块级可变状态；入参为原始 number，未对其赋值或写属性。"
+            },
+            {
+              "criterion": "输出规则：0→\"0s\"、59→\"59s\"、60→\"1m\"、90→\"1m 30s\"、3600→\"1h\"、3661→\"1h 1m 1s\"；单位间单空格；省略值为 0 的上级单位",
+              "pass": true,
+              "evidence": "绕过测试文件直接调用模块，6/6 样例实测：0=>\"0s\"、59=>\"59s\"、60=>\"1m\"、90=>\"1m 30s\"、3600=>\"1h\"、3661=>\"1h 1m 1s\" 全部 PASS；拼接用 parts.join(' ')（第 72 行）保证单位间单空格；第 68-70 行仅对 >0 的单位 push，3605 实测 \"1h 5s\" 证明中间零值单位被省略。"
+            },
+            {
+              "criterion": "非法输入（非 number、NaN、Infinity、负数、非整数）抛 RangeError，错误信息含参数名 totalSeconds",
+              "pass": true,
+              "evidence": "独立调用 13 个非法值全部 PASS：'60'/null/undefined/{}/[]（非 number）、NaN、Infinity/-Infinity、-1/-0.5、1.5/59.9/90.0001；每个均 instanceof RangeError 且 /totalSeconds/.test(e.message) 为 true。源码第 38-60 行五个分支的 message 均以 totalSeconds 开头。"
+            },
+            {
+              "criterion": "test/format-duration.test.js 用 node:test + node:assert/strict，覆盖验收 2 的 6 个样例与验收 3 的 5 类非法输入（至少 11 个用例）",
+              "pass": true,
+              "evidence": "测试文件第 1-2 行 import test from 'node:test' / import assert from 'node:assert/strict'；第 10-32 行 6 个 test 逐一断言 0/59/60/90/3600/3661；第 58-108 行覆盖 5 类非法输入（非 number、NaN、Infinity、负数、非整数）；node --test 实际输出 tests 17（≥11）。"
+            },
+            {
+              "criterion": "在仓库根执行 node --test --test-isolation=none：exit 0、fail 0；提交说明贴出 tests/pass/fail 实际数字",
+              "pass": true,
+              "evidence": "本人在仓库根 .mesh/worktrees/T-000002 用指定运行时 v24.21.0 实跑 `node --test --test-isolation=none`：tests 17 / pass 17 / fail 0 / cancelled 0 / skipped 0，EXITCODE=0，duration_ms 43.7679，与提交说明的 17/17/0/exit 0 完全一致。"
+            },
+            {
+              "criterion": "若运行时被沙箱拒绝，提交说明必须写真实报错，并逐条静态核对验收 2/3 的每个样例在测试里都有对应断言",
+              "pass": true,
+              "evidence": "运行时未被拒绝（v24.21.0 存在且成功执行，见上条），该条件不触发；作为额外静态核对，测试第 10-32 行覆盖验收 2 全部 6 个样例，第 58-108 行覆盖验收 3 全部 5 类非法输入，均逐条有断言。"
+            },
+            {
+              "criterion": "不改 package.json、不改其他卡的文件、不新增依赖；用 JSDoc 写明入参契约与输出示例",
+              "pass": true,
+              "evidence": "git diff 682651fa..c04f54d 仅 2 个 A 条目：src/format-duration.js、test/format-duration.test.js，package.json/README.md 未改；工作区 git status 干净、无未跟踪文件，无 node_modules 及任何 lockfile；package.json 无 dependencies 字段；JSDoc 第 10-20 行写明入参契约（number、非负有限整数、-0 视同 0）与 @throws，第 22-35 行含 6 个输出示例。"
+            }
+          ],
+          "notes": "逐条复核通过，批准合并。\n\n审查方式：在沙箱 worktree 内我本人重跑了测试与独立调用，不依赖提交说明的自述数字。\n- 运行时：D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe（v24.21.0），在仓库根执行 `node --test --test-isolation=none` → tests 17 / pass 17 / fail 0 / cancelled 0 / skipped 0，exit 0，duration 43.77ms，与提交说明一致。\n- 独立 import 校验（绕过测试文件）：导出键仅 ['formatDuration']；6/6 输出样例一致；13 个非法输入全部抛 RangeError 且 message 含 totalSeconds；-0 返回 \"0s\"；重复调用结果稳定。\n- 范围：commit c04f54d 的 parent 正是 base 682651fa，diff 仅新增 scope.write 内的两个文件，git status 干净；package.json/README.md 未动，无 node_modules、无 lockfile、无新增依赖。\n- 未发现 scope 越界文件。\n\n备注（非阻塞、不影响裁决）：实现不引入天单位，86400 输出 \"24h\"，与验收标准一致（标准只要求 h/m/s）。",
+          "independent": true,
+          "allow_strip_merge": false,
+          "at": "2026-10-28T19:32:52.191Z",
+          "submission_commit": "c04f54d9a0eb68e3dd4a06b5ad58c78ba95e0baa"
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "S-000011",
+          "agent_id": "hermes-01",
+          "role": "backend_dev",
+          "status": "exited",
+          "created_at": "2026-10-28T19:30:25.608Z",
+          "exit": {
+            "code": 0,
+            "at": "2026-10-28T19:32:01.425Z",
+            "note": "work submitted"
+          }
+        },
+        {
+          "session_id": "S-000014",
+          "agent_id": "dsh-01",
+          "role": "supervisor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:32:01.489Z",
+          "exit": {
+            "code": null,
+            "at": "2026-10-28T19:32:59.752Z",
+            "note": "process exited"
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "T-000003",
+      "title": "slugify：任意文本转 URL slug（含独立测试）",
+      "role": "backend_dev",
+      "created_by": "S-000005",
+      "created_at": "2026-10-28T19:18:00.279Z",
+      "updated_at": "2026-10-28T19:36:46.585Z",
+      "status": "merged",
+      "depends_on": [
+        "T-000001"
+      ],
+      "context_package": ".mesh/context/T-000003.md",
+      "context_level": "standard",
+      "scope": {
+        "write": [
+          "src/slug.js",
+          "test/slug.test.js"
+        ],
+        "read": [
+          "package.json"
+        ]
+      },
+      "acceptance": [
+        "src/slug.js 仅命名导出 slugify(input)；纯函数、不修改入参",
+        "规则：trim → NFKD 归一 → 去组合音标 → 小写 → 非 [a-z0-9] 连续段替换为单个 \"-\" → 去首尾 \"-\"；结果可为空字符串（明确记录且不抛错）",
+        "样例：\"Hello World\"→\"hello-world\"、\"  Café déjà vu!  \"→\"cafe-deja-vu\"、\"a--b__c\"→\"a-b-c\"、\"\"→\"\"、\"中文\"→\"\"、\"***\"→\"\"",
+        "非 string 输入（null/undefined/number/object）→ TypeError",
+        "test/slug.test.js 用 node:test + node:assert/strict，覆盖验收 3 的全部样例与验收 4 的 4 类非法输入",
+        "用运行时（见 why）在仓库根执行 node --test --test-isolation=none：exit 0、fail 0，提交说明贴出 tests/pass/fail；运行时不可用时按诚实记录处理（真实报错 + 静态逐条核对，不得伪造）",
+        "不改 package.json/其他卡文件、不新增依赖；JSDoc 写清归一化规则与空串语义"
+      ],
+      "estimate": "1-session",
+      "base_commit": "682651faa3f0cb880632423f3dbeb343f46d31c8",
+      "branch": "mesh/T-000003",
+      "worktree": ".mesh/worktrees/T-000003",
+      "claimed_by": "S-000012",
+      "implementer_agent": "dsh-01",
+      "submission": {
+        "commit": "b30d04659b5c8fbc3cc97cf78582cb8f97c2c1d3",
+        "branch": "mesh/T-000003",
+        "summary": "T-000003 完成：新增 src/slug.js + test/slug.test.js（仅这两个文件，commit b30d046 on mesh/T-000003，工作树干净）。\n\n实现：仅具名导出 slugify(input)；纯函数（不读写外部状态，字符串入参不可变）。流水线严格按验收顺序：trim → NFKD → 去 \\p{M} 组合音标 → toLowerCase → 非 [a-z0-9] 连续段替换为单个 \"-\" → 去首尾 \"-\"。空串语义（\"\"、\"   \"、\"***\"、\"中文\" 等无可用字符时返回 \"\"，不抛错）与归一化规则均写入 JSDoc。非 string（null/undefined/number/object 等）抛 TypeError。\n\n测试：test/slug.test.js 使用 node:test + node:assert/strict，16 个测试覆盖验收 3 的全部 6 个样例（\"Hello World\"、\"  Café déjà vu!  \"、\"a--b__c\"、\"\"、\"中文\"、\"***\"）、空白/纯标点/\"纯组合音标\"/数字/首尾分隔符等边界、纯函数性与重复调用一致性，以及验收 4 的 4 类非法输入（null/undefined/number/object，另含数组）。\n\n实测（运行时 node v24.21.0：D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe，cwd = 仓库根 .mesh/worktrees/T-000003）：\n命令 node --test --test-isolation=none\n结果 exit 0；tests 16 / pass 16 / fail 0（cancelled 0, skipped 0, todo 0）。\n未改 package.json、README.md 或其他卡文件；未新增任何依赖，未生成 lockfile/node_modules。",
+        "submitted_at": "2026-10-28T19:31:27.778Z",
+        "session_id": "S-000012",
+        "files": [
+          "src/slug.js",
+          "test/slug.test.js"
+        ]
+      },
+      "reviews": [
+        "R-0003"
+      ],
+      "merge": {
+        "commit": "b30d04659b5c8fbc3cc97cf78582cb8f97c2c1d3",
+        "merge_commit": "d068ad021ba4bfc1d88506f93d9ec8a4eabc60e0",
+        "merged_at": "2026-10-28T19:36:46.585Z",
+        "session_id": "S-000010",
+        "mode": "strict",
+        "stripped": [],
+        "files": [
+          "src/slug.js",
+          "test/slug.test.js"
+        ]
+      },
+      "blocked_reason": null,
+      "parent": null,
+      "tags": [
+        "mission:M-000001"
+      ],
+      "preferred_agent": "dsh-01",
+      "rejection_count": 0,
+      "rejected_by": [],
+      "history": [
+        {
+          "at": "2026-10-28T19:18:00.279Z",
+          "from": null,
+          "to": "draft",
+          "by": "S-000005",
+          "note": "created"
+        },
+        {
+          "at": "2026-10-28T19:30:20.407Z",
+          "from": "draft",
+          "to": "ready",
+          "by": "hub",
+          "note": "dependency T-000001 merged"
+        },
+        {
+          "at": "2026-10-28T19:30:26.749Z",
+          "from": "ready",
+          "to": "claimed",
+          "by": "S-000012",
+          "note": "bound by scheduler"
+        },
+        {
+          "at": "2026-10-28T19:31:27.779Z",
+          "from": "claimed",
+          "to": "in_progress",
+          "by": "S-000012",
+          "note": "submitted"
+        },
+        {
+          "at": "2026-10-28T19:31:27.779Z",
+          "from": "in_progress",
+          "to": "submitted",
+          "by": "S-000012",
+          "note": "T-000003 完成：新增 src/slug.js + test/slug.test.js（仅这两个文件，commit b30d046 on mesh/T-000003，工作树干净）。\n\n实现：仅具名导出 slugify(input)；纯函数（不读写外部状态，字符串入参不可变）。流水线严格按验收顺序：trim → NFKD → 去 \\p{M} 组合音标 → toLowerCase → 非 [a-"
+        },
+        {
+          "at": "2026-10-28T19:35:35.220Z",
+          "from": "submitted",
+          "to": "reviewing",
+          "by": "S-000015"
+        },
+        {
+          "at": "2026-10-28T19:36:41.728Z",
+          "from": "reviewing",
+          "to": "approved",
+          "by": "S-000015",
+          "note": "R-0003 approved"
+        },
+        {
+          "at": "2026-10-28T19:36:46.585Z",
+          "from": "approved",
+          "to": "merged",
+          "by": "S-000010",
+          "note": "strict merge d068ad02"
+        }
+      ],
+      "reviews_full": [
+        {
+          "review_id": "R-0003",
+          "task_id": "T-000003",
+          "reviewer_session": "S-000015",
+          "reviewer_agent": "hermes-01",
+          "implementer_agent": "dsh-01",
+          "verdict": "approved",
+          "criteria": [
+            {
+              "criterion": "1 PASS · src/slug.js:31 为 export function slugify(input)，无 default、无其他具名导出：import() 命名空间 Object.keys(mod) === ['slugify']，arity=1。纯函数证据：入参字符串执行前后快照相同、连续两次调用返回值相等、调用前后 Object.keys(globalThis).length 不变（无全局泄漏），函数体只做链式字符串变换，无外部读写。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "2 PASS · 源码链式调用顺序经正则逐字核对为 trim() → normalize('NFKD') → replace(/\\p{M}/gu,'') → toLowerCase() → replace(/[^a-z0-9]+/g,'-') → replace(/^-+|-+$/g,'')，与验收顺序一致，无跳步。规则探针 13/13 PASS：全角ＡＢＣ→abc、Ångström→angstrom、e+U+0301→e、HeLLo→hello、a---b→a-b、---→空串、中/文 与 CJK 混排按分隔符处理、nbsp→单个 -、İstanbul→istanbul。空串语义在 JSDoc 'Empty-result semantics' 段落明确写成 NOT an error 且不抛错；源码 throw 仅 1 处（非 string 守卫），3000 次随机字符串 fuzz 全程不抛错且必返回 string。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "3 PASS · 6 个样例在实现者测试与我的独立探针中各跑一次，结果全绿：\"Hello World\"→hello-world；\"  Café déjà vu!  \"→cafe-deja-vu；a--b__c→a-b-c；空串→空串；中文→空串（且 doesNotThrow）；***→空串。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "4 PASS · 7 类非 string 输入全部 instanceof TypeError：null、undefined、42、{}、[]、true、NaN（探针逐类单独 assert），多于验收要求的 4 类。错误信息含实际类型，不影响契约。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "5 PASS · test/slug.test.js:1-2 使用 import test from 'node:test' 与 import assert from 'node:assert/strict'；第 2-7 个 test 覆盖验收 3 的全部 6 个样例；第 13-16 个 test 覆盖验收 4 的 4 类非法输入（null/undefined/number/object，object 用例另含数组）。合计 16 个 test，无 skip/todo。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "6 PASS · 我用验收 6 指定运行时 node v24.21.0（dsh-primary-runtime 的 node.exe，93,580,104 字节）在仓库根 .mesh/worktrees/T-000003 执行 node --test --test-isolation=none，输出 tests 16 / suites 0 / pass 16 / fail 0 / cancelled 0 / skipped 0 / todo 0，exit 0，与提交说明贴出的数字逐项一致，非伪造。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            },
+            {
+              "criterion": "7 PASS · git diff 682651fa..b30d0465 --name-status 只有 A src/slug.js 与 A test/slug.test.js，无 M 项；git rev-parse 682651fa:package.json 与 HEAD:package.json 同为 c8e0017…（完全一致），git status --porcelain --untracked-files=all 为空，树内无 node_modules / package-lock.json，因此未新增依赖。JSDoc 完整记录 6 步归一化规则、空串语义与 TypeError 条件。",
+              "pass": true,
+              "evidence": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。"
+            }
+          ],
+          "notes": "独立复跑与静态核对全部通过，无返工项。测试复跑：node v24.21.0（dsh-primary-runtime）在 worktree 根执行 node --test --test-isolation=none，exit 0，tests 16 / pass 16 / fail 0，与提交说明一致。独立探针（不引用实现者测试文件，仅 import src/slug.js）36 项全 PASS：6 个验收样例、7 类非法输入、13 条流水线规则（含全角 ABC、Ångström、裸露组合音标、nbsp、İ、纯分隔符）、纯函数性与 3000 次随机字符串 fuzz 不抛错。改动面：git diff 682651fa..b30d0465 --name-status 仅两条 A（src/slug.js、test/slug.test.js）；package.json blob 哈希与 base 完全相同（c8e0017），工作树 clean、无 untracked、无 node_modules/package-lock。本轮评审未改动任何仓库文件，探针脚本在工作树之外。",
+          "independent": true,
+          "allow_strip_merge": true,
+          "at": "2026-10-28T19:36:41.726Z",
+          "submission_commit": "b30d04659b5c8fbc3cc97cf78582cb8f97c2c1d3"
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "S-000012",
+          "agent_id": "dsh-01",
+          "role": "backend_dev",
+          "status": "exited",
+          "created_at": "2026-10-28T19:30:26.745Z",
+          "exit": {
+            "code": 0,
+            "at": "2026-10-28T19:31:30.680Z",
+            "note": "work submitted"
+          }
+        },
+        {
+          "session_id": "S-000015",
+          "agent_id": "hermes-01",
+          "role": "supervisor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:32:01.585Z",
+          "exit": {
+            "code": null,
+            "at": "2026-10-28T19:37:37.513Z",
+            "note": "process exited"
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "T-000004",
+      "title": "planBudget：收入/支出明细的预算规划（含独立测试）",
+      "role": "backend_dev",
+      "created_by": "S-000005",
+      "created_at": "2026-10-28T19:18:00.381Z",
+      "updated_at": "2026-10-28T19:48:31.281Z",
+      "status": "merged",
+      "depends_on": [
+        "T-000001"
+      ],
+      "context_package": ".mesh/context/T-000004.md",
+      "context_level": "standard",
+      "scope": {
+        "write": [
+          "src/budget-planner.js",
+          "test/budget-planner.test.js"
+        ],
+        "read": [
+          "package.json"
+        ]
+      },
+      "acceptance": [
+        "src/budget-planner.js 仅命名导出 planBudget(income, expenses)；纯函数、不修改入参",
+        "入参校验：income 为有限 number 且 ≥0；expenses 为普通对象（非 null、非数组），每个值为有限 number 且 ≥0；违反抛 RangeError",
+        "返回 { income, totalExpenses, remaining, isOverBudget, savingsRate }：remaining = income - totalExpenses；isOverBudget = remaining < 0；savingsRate = income > 0 ? remaining / income : 0（负值保留、不夹取）",
+        "test/budget-planner.test.js 用 node:test + assert/strict 覆盖：正常计划、刚好花完（remaining=0）、超支、income=0、空 expenses、非法入参、入参未被修改（至少 7 组）",
+        "用运行时（见 why）在仓库根执行 node --test --test-isolation=none：exit 0、fail 0，提交说明贴出 tests/pass/fail；运行时不可用时按诚实记录处理（真实报错 + 静态逐条核对，不得伪造）",
+        "不改 package.json/其他卡文件、不新增依赖；JSDoc 写清每个字段含义与 income=0 时 savingsRate=0 的语义",
+        "金额不做四舍五入，保持浮点原值；测试用可精确表示的数值，不依赖 0.1+0.2 之类二进制误差"
+      ],
+      "estimate": "1-session",
+      "base_commit": "682651faa3f0cb880632423f3dbeb343f46d31c8",
+      "branch": "mesh/T-000004",
+      "worktree": ".mesh/worktrees/T-000004",
+      "claimed_by": "S-000013",
+      "implementer_agent": "dsh-01",
+      "submission": {
+        "commit": "da0f36bef2f6c09a375ae1c907139b6e19c57e68",
+        "branch": "mesh/T-000004",
+        "summary": "T-000004 完成（commit da0f36b on mesh/T-000004，仅新增 scope 内 2 个文件，+271 行）：\n\n1) src/budget-planner.js：仅命名导出 planBudget(income, expenses)，无 default 导出；纯函数、不修改入参。校验：income 必须 typeof number、Number.isFinite、>=0；expenses 必须为普通对象（非 null、非数组，原型为 Object.prototype 或 null）；每个支出值为有限 number 且 >=0；违反一律抛 RangeError。返回 { income, totalExpenses, remaining, isOverBudget, savingsRate }：remaining = income - totalExpenses；isOverBudget = remaining < 0；savingsRate = income > 0 ? remaining / income : 0（负值保留不夹取，income=0 时为 0，无 NaN/Infinity）；金额不四舍五入。JSDoc 逐字段说明含义并写明 income=0 时 savingsRate=0 的语义。\n\n2) test/budget-planner.test.js：node:test + assert/strict，8 个 describe / 15 个用例，覆盖：模块形状（仅 planBudget 命名导出）、正常计划（含浮点精确值 0.5/0.25/0.125 与 2/3 不取整）、刚好花完 remaining=0、超支（-200 且 savingsRate=-0.2 保留负值）、income=0 两例（0 收入空支出、0 收入有支出，savingsRate 均为 0 而非 -Infinity）、空 expenses、非法入参（income: -1/NaN/±Infinity/'1000'/null/undefined/true/{}/[]/0n；expenses: null/undefined/[]/[1,2]/字符串/数字/布尔/Map/Date/函数/非普通原型对象；值: -1/NaN/±Infinity/'50'/null/undefined/{}）、入参未被修改（冻结对象调用不抛、键值快照一致、多次调用结果稳定）。\n\n3) 运行时实测（任务卡指定运行时 D:\\AI\\DSH\\apps\\desktop\\.desktop-build\\development\\home\\dsh-runtimes\\dsh-primary-runtime\\dependencies\\node\\bin\\node.exe，Node v24.21.0，cwd=仓库根）：\n   node --test --test-isolation=none\n   → exit 0；tests 15, suites 8, pass 15, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 69.85\n\n4) 未改 package.json / README / 其他卡文件，未新增依赖（git show --stat 显示仅 src/budget-planner.js + test/budget-planner.test.js 两个新增文件）。",
+        "submitted_at": "2026-10-28T19:32:07.637Z",
+        "session_id": "S-000013",
+        "files": [
+          "src/budget-planner.js",
+          "test/budget-planner.test.js"
+        ]
+      },
+      "reviews": [
+        "R-0004"
+      ],
+      "merge": {
+        "commit": "da0f36bef2f6c09a375ae1c907139b6e19c57e68",
+        "merge_commit": "ad5b0e6d9d042c15308bd1b65b38f1c066111c83",
+        "merged_at": "2026-10-28T19:48:31.281Z",
+        "session_id": "S-000010",
+        "mode": "strict",
+        "stripped": [],
+        "files": [
+          "src/budget-planner.js",
+          "test/budget-planner.test.js"
+        ]
+      },
+      "blocked_reason": null,
+      "parent": null,
+      "tags": [
+        "mission:M-000001"
+      ],
+      "preferred_agent": "hermes-01",
+      "rejection_count": 0,
+      "rejected_by": [],
+      "history": [
+        {
+          "at": "2026-10-28T19:18:00.381Z",
+          "from": null,
+          "to": "draft",
+          "by": "S-000005",
+          "note": "created"
+        },
+        {
+          "at": "2026-10-28T19:30:20.413Z",
+          "from": "draft",
+          "to": "ready",
+          "by": "hub",
+          "note": "dependency T-000001 merged"
+        },
+        {
+          "at": "2026-10-28T19:30:27.973Z",
+          "from": "ready",
+          "to": "claimed",
+          "by": "S-000013",
+          "note": "bound by scheduler"
+        },
+        {
+          "at": "2026-10-28T19:32:07.638Z",
+          "from": "claimed",
+          "to": "in_progress",
+          "by": "S-000013",
+          "note": "submitted"
+        },
+        {
+          "at": "2026-10-28T19:32:07.638Z",
+          "from": "in_progress",
+          "to": "submitted",
+          "by": "S-000013",
+          "note": "T-000004 完成（commit da0f36b on mesh/T-000004，仅新增 scope 内 2 个文件，+271 行）：\n\n1) src/budget-planner.js：仅命名导出 planBudget(income, expenses)，无 default 导出；纯函数、不修改入参。校验：income 必须 typeof number、Number.isFinite、>="
+        },
+        {
+          "at": "2026-10-28T19:40:36.304Z",
+          "from": "submitted",
+          "to": "reviewing",
+          "by": "S-000017"
+        },
+        {
+          "at": "2026-10-28T19:40:36.305Z",
+          "from": "reviewing",
+          "to": "approved",
+          "by": "S-000017",
+          "note": "R-0004 approved"
+        },
+        {
+          "at": "2026-10-28T19:48:31.281Z",
+          "from": "approved",
+          "to": "merged",
+          "by": "S-000010",
+          "note": "strict merge ad5b0e6d"
+        }
+      ],
+      "reviews_full": [
+        {
+          "review_id": "R-0004",
+          "task_id": "T-000004",
+          "reviewer_session": "S-000017",
+          "reviewer_agent": "hermes-01",
+          "implementer_agent": "dsh-01",
+          "verdict": "approved",
+          "criteria": [
+            {
+              "criterion": "1. src/budget-planner.js 仅命名导出 planBudget(income, expenses)；纯函数、不修改入参",
+              "pass": true,
+              "evidence": "独立探针（node v24.21.0，动态 import src/budget-planner.js）：Object.keys(namespace)=['planBudget']，namespace.default===undefined，planBudget.length===2。纯函数：以 Proxy(set/defineProperty/deleteProperty 计数) 包裹 expenses 调用 planBudget(1000,{rent:600,food:150.5,utilities:0.5}) → 写操作计数 0，Object.entries 快照前后一致，返回 totalExpenses=751/remaining=249；对 Object.freeze({a:1,b:2}) 调用不抛且键不变；同一入参两次调用结果 deepEqual 相等。"
+            },
+            {
+              "criterion": "2. 入参校验：income 有限 number 且 >=0；expenses 普通对象（非 null、非数组），每个值有限 number 且 >=0；违反抛 RangeError",
+              "pass": true,
+              "evidence": "独立探针 36 组非法入参全部实际抛出且 instanceof RangeError：income=-1/-0.5/NaN/±Infinity/\"1000\"/null/undefined/true/{}/[]/0n/缺参；expenses=null/undefined/[]/[1,2]/\"x\"/42/true/Map/Date/函数/Object.create({a:1})/class 实例；值=-1/NaN/±Infinity/\"50\"/null/undefined/{}/0n 以及 {a:1,b:-1} 的第二项非法。合法侧：Object.assign(Object.create(null),{a:25}) 被接受（totalExpenses=25, savingsRate=0.75），income=-0 通过且 savingsRate=0。"
+            },
+            {
+              "criterion": "3. 返回 {income,totalExpenses,remaining,isOverBudget,savingsRate}：remaining=income-totalExpenses；isOverBudget=remaining<0；savingsRate=income>0?remaining/income:0（负值保留、不夹取）",
+              "pass": true,
+              "evidence": "独立探针：planBudget(4000,{rent:1600,food:400,transport:200}) → {income:4000,totalExpenses:2200,remaining:1800,isOverBudget:false,savingsRate:0.45}，键顺序为 income,totalExpenses,remaining,isOverBudget,savingsRate。刚好花完 1000/{400,600} → remaining=0、isOverBudget=false、savingsRate=0。超支 1000/{900,300} → remaining=-200、isOverBudget=true、savingsRate=-0.2（负值未被夹取）。income=0：planBudget(0,{}) → savingsRate=0（非 NaN）；planBudget(0,{food:50}) → savingsRate=0 且 Number.isFinite 为真（非 -Infinity）。源码 src/budget-planner.js:51-57 与公式逐字一致。"
+            },
+            {
+              "criterion": "4. test/budget-planner.test.js 用 node:test + assert/strict 覆盖 7 类场景（至少 7 组）",
+              "pass": true,
+              "evidence": "实测文件 test/budget-planner.test.js：import { describe, it } from \"node:test\"、import assert from \"node:assert/strict\"；8 个 describe / 15 个 it，无一例 skip/todo/.only。分组逐条命中：正常计划(4 例)、刚好花完 remaining=0(1)、超支(1)、income=0(2 例：空支出/有支出)、空 expenses(1)、非法入参(3 例)、入参未被修改(2 例：冻结对象+快照、多次调用稳定)，另有模块形状 1 例。期望值为硬编码常量（如 totalExpenses=2200、remaining=-200、savingsRate=-0.2），非自证式断言。"
+            },
+            {
+              "criterion": "5. 指定运行时在仓库根执行 node --test --test-isolation=none：exit 0、fail 0，提交说明贴出 tests/pass/fail",
+              "pass": true,
+              "evidence": "我本人复跑（不采信提交说明）：cwd=worktrees/T-000004，D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe (v24.21.0) --test --test-isolation=none → 逐条输出 15 个 ✔，汇总 tests 15 / suites 8 / pass 15 / fail 0 / cancelled 0 / skipped 0 / todo 0，EXIT=0。与提交说明贴出的 15/8/15/0 完全一致（仅 duration_ms 不同，属正常抖动）。"
+            },
+            {
+              "criterion": "6. 不改 package.json/其他卡文件、不新增依赖；JSDoc 写清字段含义与 income=0 时 savingsRate=0 的语义",
+              "pass": true,
+              "evidence": "git diff --numstat 682651fa..da0f36be 只有两行：59/0 src/budget-planner.js、212/0 test/budget-planner.test.js；name-status 均为 A；git show --stat da0f36be 同。package.json blob 在 base 与提交处同为 c8e0017945b0a6d9510d66bf3486fed438472f13（diff 0 行），无 package-lock.json、无 node_modules、无新增依赖。src/budget-planner.js:5-9 的 @property 逐字段说明 income/totalExpenses/remaining/isOverBudget/savingsRate 含义，并明写 \"income 为 0 时按定义返回 0，避免除零得到 NaN/Infinity\"。"
+            },
+            {
+              "criterion": "7. 金额不做四舍五入，保持浮点原值；测试用可精确表示的数值",
+              "pass": true,
+              "evidence": "源码只有加法与一次除法，无 toFixed/Math.round 类调用（src/budget-planner.js:42-57）。独立探针：planBudget(1,{a:1/3}).totalExpenses===1/3、remaining===1-1/3；planBudget(3,{a:1}).savingsRate===2/3 且 !==0.67；planBudget(0.5,{a:0.25,b:0.125}) → 0.375/0.125/0.25 精确。测试用例取值 0.5、0.25、0.125、250.5、150.5、751 均为二进制可精确表示值，未出现 0.1+0.2 依赖。"
+            }
+          ],
+          "notes": "逐条实测通过，7/7 acceptance 满足，approve。\n\n复跑环境：Node v24.21.0（任务卡指定运行时），cwd=worktrees/T-000004，git HEAD=da0f36be（分支 mesh/T-000004，base 682651fa），工作树干净。\nscope 核对：base..提交 仅 A src/budget-planner.js、A test/budget-planner.test.js，零越界；package.json blob 未变（c8e0017945b0），无新增依赖、无 node_modules/package-lock。\n\n两条不属于本次 acceptance、仅作记录的观察（不构成打回理由，若后续卡有相关要求可提）：\na) 支出明细用 Object.keys 遍历，Symbol 键上的值不参与校验与合计（planBudget(1,{a:1,[Symbol()]:-1}) 不抛错）。当前 acceptance 未要求 Symbol 键语义，如需支持应在新卡中明写。\nb) 合计溢出未做保护：{a:1e308,b:1e308} 使 totalExpenses=Infinity、remaining/savingsRate=-Infinity。逐值校验满足 acceptance（每值有限），公式也与 acceptance 一致，故不算缺陷；若要防溢出需在 acceptance 中追加条款。",
+          "independent": true,
+          "allow_strip_merge": false,
+          "at": "2026-10-28T19:40:36.304Z",
+          "submission_commit": "da0f36bef2f6c09a375ae1c907139b6e19c57e68"
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "S-000013",
+          "agent_id": "dsh-01",
+          "role": "backend_dev",
+          "status": "exited",
+          "created_at": "2026-10-28T19:30:27.967Z",
+          "exit": {
+            "code": 0,
+            "at": "2026-10-28T19:32:12.196Z",
+            "note": "work submitted"
+          }
+        },
+        {
+          "session_id": "S-000017",
+          "agent_id": "hermes-01",
+          "role": "supervisor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:37:37.569Z",
+          "exit": {
+            "code": null,
+            "at": "2026-10-28T19:41:13.720Z",
+            "note": "process exited"
+          }
+        }
+      ]
+    },
+    {
+      "task_id": "T-000005",
+      "title": "整合收口：src 入口导出 + 可导入性测试 + README 用法",
+      "role": "executor",
+      "created_by": "S-000005",
+      "created_at": "2026-10-28T19:18:06.612Z",
+      "updated_at": "2026-10-28T19:53:41.953Z",
+      "status": "merged",
+      "depends_on": [
+        "T-000002",
+        "T-000003",
+        "T-000004"
+      ],
+      "context_package": ".mesh/context/T-000005.md",
+      "context_level": "standard",
+      "scope": {
+        "write": [
+          "src/index.js",
+          "test/index.test.js",
+          "README.md"
+        ],
+        "read": [
+          "package.json",
+          "src/format-duration.js",
+          "src/slug.js",
+          "src/budget-planner.js",
+          "test/format-duration.test.js",
+          "test/slug.test.js",
+          "test/budget-planner.test.js"
+        ]
+      },
+      "acceptance": [
+        "src/index.js 从 './format-duration.js'、'./slug.js'、'./budget-planner.js' 重导出 formatDuration / slugify / planBudget 三个命名导出，路径与函数名与 T-000002~T-000004 契约一致",
+        "test/index.test.js 用 node:test 断言：从 '../src/index.js' 导入的三个值 typeof === 'function'，并各做一次行为断言（formatDuration(90)==='1m 30s'；slugify('Hello World')==='hello-world'；planBudget(1000,{rent:400}).remaining===600）",
+        "README.md 新增「工具函数」一节：三个函数的签名、各 1 个示例、node --test 运行方式，以及「零第三方依赖」说明",
+        "用运行时（见 why）在仓库根执行 node --test --test-isolation=none：4 个测试文件全部被发现、exit 0、fail 0，提交说明贴出完整输出（tests/pass/fail）",
+        "package.json 仍无任何依赖字段；仓库无 lockfile、无 node_modules 入库",
+        "除 src/index.js、test/index.test.js、README.md 外不改动任何文件（尤其不改三张实现卡的 src/test 文件）"
+      ],
+      "estimate": "1-session",
+      "base_commit": "49a99d689609abaf15a4e96ca5b675f2394b28a0",
+      "branch": "mesh/T-000005",
+      "worktree": ".mesh/worktrees/T-000005",
+      "claimed_by": "S-000023",
+      "implementer_agent": "dsh-01",
+      "submission": {
+        "commit": "74b74403045f8b258e0d34c15cf55be4a5c10137",
+        "branch": "mesh/T-000005",
+        "summary": "T-000005 完成（commit 74b7440 on mesh/T-000005，工作树干净，仅改 scope 内 3 个文件：src/index.js 新增 20 行、test/index.test.js 新增 63 行、README.md +70 行）。\n\n1) src/index.js：仅做重导出，无任何运行时逻辑——export { formatDuration } from './format-duration.js'; export { slugify } from './slug.js'; export { planBudget } from './budget-planner.js'; 三个名字/路径与 T-000002~T-000004 契约一致。\n\n2) test/index.test.js（node:test + node:assert/strict，6 个用例）：三个值 typeof === 'function'；入口恰好公开 ['formatDuration','planBudget','slugify'] 且无 default；行为断言 formatDuration(90)==='1m 30s'、slugify('Hello World')==='hello-world'、planBudget(1000,{rent:400}).remaining===600；另断言三个重导出与直接 import 各实现模块为同一引用（证明路径/名字无误）。\n\n3) README.md 新增「工具函数」一节：三个函数的签名/入参/返回/示例各 1 个（均从 './src/index.js' 导入），「运行测试」给出 node --test --test-isolation=none（本仓库验证命令）与等价 node --test，「零第三方依赖」说明 package.json 无任何依赖字段、无 lockfile、无 node_modules。\n\n4) 运行时实测 —— node v24.21.0（D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe），cwd = 仓库根，命令 node --test --test-isolation=none，exit 0：\nℹ tests 75\nℹ suites 8\nℹ pass 75\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 115.6951\n\n测试文件发现情况（重要说明）：当前 base（49a99d68）已含 T-000006 合并的 test/bytes.test.js，因此仓库根共有 5 个测试文件被全部发现并通过：format-duration(17) + slug(16) + budget-planner(15) + bytes(21，T-000006) + index(6，本卡) = 75。本卡要求的 4 个测试文件（format-duration / slug / budget-planner / index）均在列且全部通过；多出的 bytes.test.js 属 T-000006 既有产出，未在本卡改动。\n\n5) 依赖检查：package.json 键为 name,version,private,type,description,scripts，无 dependencies/devDependencies 等任何依赖字段；无 lockfile、无 node_modules（Test-Path node_modules = False）。\n\n6) 越界检查：git show --stat HEAD 仅 README.md、src/index.js、test/index.test.js 三个文件；未改三张实现卡的 src/test 文件、未改 package.json。\n\n额外独立核对：node --input-type=module -e \"import * as m from './src/index.js'\" → keys=formatDuration,planBudget,slugify，三者 typeof 均为 function，样例值 1m 30s / hello-world / 600，exit 0。",
+        "submitted_at": "2026-10-28T19:50:22.384Z",
+        "session_id": "S-000023",
+        "files": [
+          "README.md",
+          "src/index.js",
+          "test/index.test.js"
+        ]
+      },
+      "reviews": [
+        "R-0007"
+      ],
+      "merge": {
+        "commit": "74b74403045f8b258e0d34c15cf55be4a5c10137",
+        "merge_commit": "7b94582c402d093d446cd163bd357986276ffd8c",
+        "merged_at": "2026-10-28T19:53:41.953Z",
+        "session_id": "S-000010",
+        "mode": "strict",
+        "stripped": [],
+        "files": [
+          "README.md",
+          "src/index.js",
+          "test/index.test.js"
+        ]
+      },
+      "blocked_reason": null,
+      "parent": null,
+      "tags": [
+        "mission:M-000001"
+      ],
+      "preferred_agent": "dsh-01",
+      "rejection_count": 0,
+      "rejected_by": [],
+      "history": [
+        {
+          "at": "2026-10-28T19:18:06.612Z",
+          "from": null,
+          "to": "draft",
+          "by": "S-000005",
+          "note": "created"
+        },
+        {
+          "at": "2026-10-28T19:48:31.290Z",
+          "from": "draft",
+          "to": "ready",
+          "by": "hub",
+          "note": "dependency T-000004 merged"
+        },
+        {
+          "at": "2026-10-28T19:48:37.955Z",
+          "from": "ready",
+          "to": "claimed",
+          "by": "S-000023",
+          "note": "bound by scheduler"
+        },
+        {
+          "at": "2026-10-28T19:50:22.384Z",
+          "from": "claimed",
+          "to": "in_progress",
+          "by": "S-000023",
+          "note": "submitted"
+        },
+        {
+          "at": "2026-10-28T19:50:22.384Z",
+          "from": "in_progress",
+          "to": "submitted",
+          "by": "S-000023",
+          "note": "T-000005 完成（commit 74b7440 on mesh/T-000005，工作树干净，仅改 scope 内 3 个文件：src/index.js 新增 20 行、test/index.test.js 新增 63 行、README.md +70 行）。\n\n1) src/index.js：仅做重导出，无任何运行时逻辑——export { formatDuration } from './"
+        },
+        {
+          "at": "2026-10-28T19:53:20.036Z",
+          "from": "submitted",
+          "to": "reviewing",
+          "by": "S-000024"
+        },
+        {
+          "at": "2026-10-28T19:53:37.324Z",
+          "from": "reviewing",
+          "to": "approved",
+          "by": "S-000024",
+          "note": "R-0007 approved"
+        },
+        {
+          "at": "2026-10-28T19:53:41.953Z",
+          "from": "approved",
+          "to": "merged",
+          "by": "S-000010",
+          "note": "strict merge 7b94582c"
+        }
+      ],
+      "reviews_full": [
+        {
+          "review_id": "R-0007",
+          "task_id": "T-000005",
+          "reviewer_session": "S-000024",
+          "reviewer_agent": "hermes-01",
+          "implementer_agent": "dsh-01",
+          "verdict": "approved",
+          "criteria": [
+            {
+              "criterion": "1 PASS 重导出路径与名字一致：src/index.js:18-20 三条 export {...} from 分别指向 ./format-duration.js、./slug.js、./budget-planner.js；实现模块具名导出点 format-duration.js:37 export function formatDuration、slug.js:31 export function slugify、budget-planner.js:34 export function planBudget；运行时 node --input-type=module 导入 ./src/index.js 得 keys=formatDuration,planBudget,slugify",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            },
+            {
+              "criterion": "2 PASS 可导入性测试齐全：test/index.test.js:23-27 三条 typeof === function 断言，:42-53 三条行为断言格式与任务卡字面一致（formatDuration(90)===\"1m 30s\"、slugify(\"Hello World\")===\"hello-world\"、planBudget(1000,{rent:400}).remaining===600）；实跑输出该文件 6 个用例全 ✔（含上述 6 条断言），另有 :59-63 同一引用断言证明重导出未错位",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            },
+            {
+              "criterion": "3 PASS README 覆盖四项要素：README.md:5 起「## 工具函数」，三个函数各有签名行（:14、:29、:43）与 1 个从 ./src/index.js 导入的示例（:18-22、:33-37、:48-52）；:54-64「## 运行测试」给出 node --test --test-isolation=none 与 node --test；:66-71「## 零第三方依赖」。文档断言经实跑核对：示例值 1m 30s / hello-world / 600 与运行时输出一致，formatDuration(-0)===\"0s\"、小数抛 RangeError、slugify 非字符串抛 TypeError 均与实现一致",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            },
+            {
+              "criterion": "4 PASS 运行时复跑一致（cwd=仓库根，node v24.21.0，二进制 D:/AI/DSH/apps/desktop/.desktop-build/development/home/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe）：node --test --test-isolation=none → exit 0，tests 75 / suites 8 / pass 75 / fail 0 / skipped 0 / todo 0；本卡要求的 4 个文件全部被发现且通过（format-duration 17 + slug 16 + budget-planner 15 + index 6 = 54）。说明：实际发现 5 个文件，多出的 test/bytes.test.js 共 21 例属 base 49a99d68 既有产出（git ls-tree 49a99d68 test/ 已含该文件），本卡未改动；提交说明已如实披露并附完整输出",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            },
+            {
+              "criterion": "5 PASS 零依赖：package.json:1-10 键仅 name/version/private/type/description/scripts，无 dependencies/devDependencies/optionalDependencies/peerDependencies；仓库根仅 package.json、README.md、src、test；git ls-files 中无 lockfile、无 node_modules；工作树无未跟踪文件（git status --porcelain --untracked-files=all 输出 0 行）",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            },
+            {
+              "criterion": "6 PASS 无越界：git diff 49a99d68..74b74403 --stat 仅 README.md(+70)、src/index.js(+20)、test/index.test.js(+63)，3 files changed 153 insertions(+)，全在 scope.write 内；三张实现卡的 src/test 文件与 package.json 均未出现在 diff 中；git status 干净",
+              "pass": true,
+              "evidence": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。"
+            }
+          ],
+          "notes": "approved。六条 acceptance 逐条通过，证据见各 criterion。独立复跑与提交说明完全吻合（75/75 pass，exit 0）。唯一需向合并终审说明的一点：仓库根现有 5 个测试文件而非任务卡写的 4 个，多出的 test/bytes.test.js 来自 base 已合并的 T-000006，本卡 scope 不可写故不应改动，本卡的 4 个目标文件全部被发现且全绿。审查者 hermes-01/S-000024，未参与本卡实现（实现方 dsh-01/S-000023）。",
+          "independent": true,
+          "allow_strip_merge": false,
+          "at": "2026-10-28T19:53:37.322Z",
+          "submission_commit": "74b74403045f8b258e0d34c15cf55be4a5c10137"
+        }
+      ],
+      "sessions": [
+        {
+          "session_id": "S-000023",
+          "agent_id": "dsh-01",
+          "role": "executor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:48:37.951Z",
+          "exit": {
+            "code": 0,
+            "at": "2026-10-28T19:50:23.439Z",
+            "note": "work submitted"
+          }
+        },
+        {
+          "session_id": "S-000024",
+          "agent_id": "hermes-01",
+          "role": "supervisor",
+          "status": "exited",
+          "created_at": "2026-10-28T19:50:54.244Z",
+          "exit": {
+            "code": null,
+            "at": "2026-10-28T19:54:02.298Z",
+            "note": "process exited"
+          }
+        }
+      ]
+    }
+  ]
+}
