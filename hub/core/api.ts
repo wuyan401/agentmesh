@@ -12,6 +12,7 @@ import path from 'node:path'
 import { MeshError, MESH_ERRORS } from './errors.ts'
 import { matchAnyGlob, normRel } from './fsx.ts'
 import { getRoleCard } from '../roles/cards.ts'
+import { buildTeammates } from './teammates.ts'
 import { canPlan, PLAN_ROLES } from './types.ts'
 import type { PeerScore } from './types.ts'
 import type { ContextLevel } from './context.ts'
@@ -502,6 +503,31 @@ export class HubApi {
     const id = this.hub.identity.requireLead(sessionId, missionId)
     const result = this.hub.missions.writeReport(id.session.session_id, missionId, markdown)
     return ok({ mission_id: missionId, status: result.mission.status, report_path: result.path, note: 'mission 已完成' })
+  }
+
+  /**
+   * Who else is on this mission (§3.1) — the structured version of the table that is
+   * injected into every context package. Same source, so they cannot disagree.
+   */
+  list_teammates(sessionId: string, missionId?: string | null): ApiResult {
+    const id = this.identity(sessionId)
+    const mission = missionId ?? id.session.mission
+    if (!mission) {
+      throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'no mission given, and this session is not bound to one', {
+        session_id: id.session.session_id,
+        hint: 'pass mission_id explicitly',
+      })
+    }
+    const card = this.hub.store.requireMission(mission)
+    const rows = buildTeammates(this.hub.store, mission)
+    return ok({
+      mission_id: card.mission_id,
+      title: card.title,
+      status: card.status,
+      lead_agent: card.lead_agent,
+      you: id.agent.agent_id,
+      teammates: rows,
+    })
   }
 
   // -- profiles / peer review (V2 §2) --------------------------------------

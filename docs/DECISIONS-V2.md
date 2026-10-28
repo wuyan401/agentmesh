@@ -190,3 +190,45 @@ rejected ──(下一个 tick)──▶ ready ──pickAgent──▶ 同一�
 
 所有统计写入都是 best-effort：写 profile 失败只往 stderr 打一行，绝不让裁决流程失败。
 
+---
+
+# M3 追加
+
+## D22 · 「你是第 k/n 个执行者」的口径
+
+规格给的例子是「你是第 2/4 个执行者」，但没说 n 是"人数"还是"卡数"。M3 取 **卡数**：
+`k = mission.tasks.indexOf(task_id) + 1`，`n = mission.tasks.length`。
+
+**理由：** 它与下一行「你这一环：T-000012」指向同一个坐标系（第几张卡），人能直接对上；
+若按人去重计数，同一张卡重做时 k 会跳变，反而更难看懂。
+
+## D23 · 队友表的行从"数据"来，不从 `mission.teammates` 单一来源来
+
+`mission.teammates` 只由调度器记（`noteParticipant`）；一个自己 `mesh claim` 的 worker
+（通道 B）不会经过调度器，于是它不会出现在表里——表就撒了谎。
+
+**修法：** 行序 = `mission.teammates` 在前，再把卡片和审查记录里出现、但没被记过的人按卡序补上；
+lead 一定在第一位。这样"表里有的人"永远等于"数据证明参与过的人"。
+
+## D24 · 注入两处，同一个渲染函数
+
+「你在哪 + 队友」既进 **spawn prompt**（agent 的第一句话，也是验收要求能 grep 到的地方），
+也进 **上下文包文件**（`claim_task` 返回路径的那份）。两处都调用
+`ContextBuilder.renderMissionSection()`，所以不可能各说各话。
+
+prompt 里多放一份的理由：agent 未必会打开上下文包文件，但一定会读它的第一句话。
+
+## D25 · `minimal` 档只砍"第一节 + 第二节"，不砍工具说明
+
+- `minimal`：prompt/包只有「你在哪（紧凑）」三行；§3.2「平台速查」不进包。
+- `standard` / `full`：全部两节。
+- 但 prompt 里 V1 就有的「怎么和平台说话」（文件协议命令）不受档位影响——没有它，
+  agent 连怎么 hello 都不知道，那不是"少给上下文"，是"没法干活"。
+
+## D26 · `list_teammates` 的 mission_id 可省，但绑不到 mission 就报错
+
+会话若绑定了 mission（`session.mission`），省略参数就取它——worker 最常见的情形。
+没绑定又不传 → `MESH_SCHEMA_INVALID`，而不是返回空表。空表会被误读成"这次就我一个人"，
+那是错的信息；报错才是对的。
+
+

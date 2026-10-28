@@ -55,6 +55,7 @@ import {
   cmdWriteReport,
 } from './mission.ts'
 import { cmdProfile, cmdRatePeer } from './profile.ts'
+import { cmdTeammates } from './human.ts'
 import { createRequire } from 'node:module'
 
 const require_ = createRequire(import.meta.url)
@@ -74,6 +75,7 @@ ${style.bold('评分（V2）')}
                                          cost_tier | reliability | speed_notes | manual_locked
   mesh rate-peer <agent> --mission M-1 --quality 90 --cooperation 85 --evidence 95 --speed 70
                                          互评（必须同一 mission 参与过，不能评自己，一人一次）
+  mesh teammates [M-000001]              这个 mission 的参与者表（与注入给 agent 的同一张表）
 
 ${style.bold('Mission（V2）')}
   mesh mission "你想做什么" [--lead id] [--accept "…"] [--dry-plan] [--timeout 900]
@@ -189,6 +191,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdProfile(parsed, hub)
     case 'rate-peer':
       return cmdRatePeer(parsed, hub)
+    case 'teammates':
+      return cmdTeammates(parsed, hub)
     default:
       break
   }

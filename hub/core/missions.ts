@@ -17,6 +17,7 @@ import { MeshError, MESH_ERRORS } from './errors.ts'
 import { nowIso } from './fsx.ts'
 import { isProcessAlive } from './lock.ts'
 import { applyMissionTransition, canMissionTransition } from './stateMachine.ts'
+import { missionOfTask } from './teammates.ts'
 import { loadConfig } from './config.ts'
 import type { MeshConfig } from './config.ts'
 import type { Board } from './board.ts'
@@ -225,10 +226,7 @@ export class MissionService {
 
   /** Which mission owns a task card (missions hold the task list; no reverse field needed). */
   missionOfTask(taskId: string): MissionCard | null {
-    for (const mission of this.store.listMissions()) {
-      if (mission.tasks.includes(taskId)) return mission
-    }
-    return null
+    return missionOfTask(this.store, taskId)
   }
 
   /**

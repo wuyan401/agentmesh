@@ -20,6 +20,7 @@ import { detectAgents, defaultDetectContext } from '../hub/adapters/detect.ts'
 import { ROLE_CARDS, getRoleCard, isRoleId } from '../hub/roles/cards.ts'
 import { ensureMeshRef, scopeCheck } from '../hub/core/mergeGate.ts'
 import { isProcessAlive } from '../hub/core/lock.ts'
+import { buildTeammates } from '../hub/core/teammates.ts'
 import { sleepSync, writeJsonAtomic } from '../hub/core/fsx.ts'
 import type { RoleId } from '../hub/core/types.ts'
 import {
@@ -1003,6 +1004,40 @@ export function cmdConfig(parsed: ParsedArgs, hub: Hub): number {
     return 0
   }
   printJson(loadConfig(hub.paths))
+  return 0
+}
+
+/**
+ * `mesh teammates [--mission M-000001]` — the CLI mirror of `list_teammates`.
+ *
+ * Read-only and session-optional: a human inspecting a mission should not need a
+ * worker session first. The rows come from the same builder that fills the context
+ * package, so the table here and the table injected into an agent cannot disagree.
+ */
+export function cmdTeammates(parsed: ParsedArgs, hub: Hub): number {
+  const missionId = str(parsed, 'mission') ?? parsed.positionals[0]
+  if (!missionId) {
+    throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'usage: mesh teammates <M-000001>   (or --mission <id>)')
+  }
+  const mission = hub.store.requireMission(missionId)
+  const rows = buildTeammates(hub.store, missionId)
+  if (bool(parsed, 'json')) {
+    printJson({ mission_id: mission.mission_id, title: mission.title, lead_agent: mission.lead_agent, teammates: rows })
+    return 0
+  }
+  process.stdout.write(
+    `${style.bold(mission.mission_id)} ${mission.title}  ${style.dim(`lead ${mission.lead_agent} · ${rows.length} 人参与`)}\n\n`,
+  )
+  const body = rows.map((r) => [
+    r.is_lead ? `${r.agent_id} ${style.cyan('lead')}` : r.agent_id,
+    r.personality || '—',
+    r.strengths.join('、') || '—',
+    r.weaknesses.join('、') || '—',
+    String(r.quality_score),
+    String(r.cost_tier),
+    r.role_in_mission,
+  ])
+  process.stdout.write(`${table(['agent', '性格', '擅长', '弱势', '质量分', '花费', '本轮负责'], body)}\n`)
   return 0
 }
 

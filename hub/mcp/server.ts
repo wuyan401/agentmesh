@@ -353,6 +353,13 @@ const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'list_teammates',
+    description:
+      'Who else took part in this mission: agent, personality, strengths, weaknesses, quality score, cost, and what each one owns in this round. Omit mission_id to use the mission this session belongs to.',
+    inputSchema: obj({ mission_id: str('mission id, e.g. M-000001 (optional when the session is bound to one)') }),
+    handler: (api, session, args) => api.list_teammates(session, optStr(args, 'mission_id') ?? null),
+  },
+  {
     name: 'send',
     description:
       'Send a message to a role thread. Addressing is by role (never by agent id): the hub resolves the current holder and queues the message if the role is vacant.',

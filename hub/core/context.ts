@@ -14,6 +14,7 @@ import path from 'node:path'
 import { matchAnyGlob, normRel } from './fsx.ts'
 import { PROTOCOL_QUICKREF } from './protocol.ts'
 import { renderRoleCard } from '../roles/cards.ts'
+import { buildTeammates, missionOfTask, renderTeammateTable } from './teammates.ts'
 import type { MeshStore } from './store.ts'
 import type { RoleId, TaskCard } from './types.ts'
 
@@ -202,6 +203,69 @@ export class ContextBuilder {
     return lines.join('\n')
   }
 
+  /**
+   * §3.1 — where you are, and who else is here.
+   *
+   * `minimal` carries only the compact form of "你在哪"; `standard`/`full` get the
+   * full block plus the teammate table. A card with no mission degrades to the
+   * compact form on every level: inventing a mission for it would be a lie.
+   */
+  renderMissionSection(task: TaskCard, sessionId: string | null, level: ContextLevel): string {
+    const mission = missionOfTask(this.store, task.task_id)
+    const session = sessionId ? this.store.getSession(sessionId) : null
+    const viewer = session?.agent_id ?? task.implementer_agent ?? null
+    const role = session?.role ?? task.role
+    const lines: string[] = []
+
+    const completion = '你 submit → 一个独立审查者通过 → 平台 scope 终审合并'
+
+    if (!mission || level === 'minimal') {
+      lines.push('## 你在哪（紧凑）')
+      lines.push('')
+      if (mission) {
+        const index = mission.tasks.indexOf(task.task_id) + 1
+        lines.push(
+          `- Mission：${mission.mission_id}「${mission.title}」，你是第 ${index}/${mission.tasks.length} 个执行者；lead 是 ${mission.lead_agent}`,
+        )
+      } else {
+        lines.push('- 本卡不属于任何 mission（独立任务卡），没有 lead，也没有队友表')
+      }
+      lines.push(`- 你这一环：${task.task_id}「${task.title}」，角色 ${role}`)
+      lines.push(`- 完成定义：${completion}`)
+      return lines.join('\n')
+    }
+
+    const index = mission.tasks.indexOf(task.task_id) + 1
+    lines.push('## 你在哪')
+    lines.push('')
+    lines.push(`- Mission：${mission.mission_id}「${mission.title}」（你是第 ${index}/${mission.tasks.length} 个执行者）`)
+    lines.push(`- Lead：${mission.lead_agent} —— 它拆的任务，最后由它整合、二次验收并给用户报告`)
+    lines.push(`- 你这一环：${task.task_id}「${task.title}」，角色 ${role}`)
+    lines.push(`- 完成定义：${completion}`)
+    if (mission.acceptance.length > 0) {
+      lines.push(`- Mission 级验收（决定整体算不算完成）：${mission.acceptance.map((a, i) => `${i + 1}) ${a}`).join(' ')}`)
+    }
+
+    const rows = buildTeammates(this.store, mission.mission_id)
+    lines.push('')
+    lines.push(renderTeammateTable(rows, { mission, viewerAgent: viewer }))
+    return lines.join('\n')
+  }
+
+  /** §3.2 — the platform how-to, short enough to actually be read. */
+  renderPlatformSection(role: RoleId): string {
+    const lines: string[] = []
+    lines.push('## 这个平台怎么用（速查）')
+    lines.push('')
+    lines.push('- 你现在在一个 P-Session：cwd 是任务沙箱，身份是 S-xxxxxx，角色是 ' + role + '。')
+    lines.push('- 领活 `hub.claim_task(task_id)`；交付 `git commit` + `hub.submit(task_id, summary)`。')
+    lines.push('- 只写 scope.write 内的路径；越界会在合并终审被整单打回。')
+    lines.push('- 有疑问 `hub.request_clarification`；要越界 `hub.escalate`（不中断你）。')
+    lines.push('- 不知道队友是谁：`hub.list_teammates(mission_id)`，不要猜。')
+    lines.push('- 你是 lead 时额外可用：`plan_mission` / `dispatch_mission` / `final_verdict` / `write_report`。')
+    return lines.join('\n')
+  }
+
   build(input: ContextInput): { markdown: string; level: ContextLevel; path: string } {
     const task = this.store.requireTask(input.taskId)
     const level: ContextLevel = input.level ?? 'standard'
@@ -212,6 +276,12 @@ export class ContextBuilder {
     parts.push(`生成时间：${new Date().toISOString()}`)
     parts.push(`会话：${input.sessionId ?? '（尚未绑定）'}`)
     parts.push('')
+    // §3.1 goes high on purpose: an agent that only reads the first screen must still
+    // learn where it is and who it is working with.
+    parts.push(this.renderMissionSection(task, input.sessionId ?? null, level))
+    parts.push('')
+    parts.push('---')
+    parts.push('')
     parts.push(PROTOCOL_QUICKREF)
     parts.push('')
     parts.push('---')
@@ -221,6 +291,14 @@ export class ContextBuilder {
     parts.push('---')
     parts.push('')
     parts.push(renderRoleCard(task.role))
+
+    if (level === 'standard' || level === 'full') {
+      parts.push('')
+      parts.push('---')
+      parts.push('')
+      parts.push(this.renderPlatformSection(task.role))
+    }
+
     parts.push('')
     parts.push('---')
     parts.push('')

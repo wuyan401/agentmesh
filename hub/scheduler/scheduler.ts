@@ -650,6 +650,10 @@ export class Scheduler {
       threadDigest,
       userMessage: extras.userMessage,
       extraSection: extras.extraSection,
+      // V2 §3: "你在哪 + 队友" goes into the prompt itself, at the configured level.
+      // Rendered by ContextBuilder so the prompt and the context package can never
+      // tell the agent two different stories.
+      contextSections: this.contextSections(task, session, session.role),
     })
 
     const ctx: SpawnContext = {
@@ -695,6 +699,15 @@ export class Scheduler {
       injection: plan.injection,
       command: describePlan(plan),
     }
+  }
+
+  /** §3.1 + §3.2, at the level the project configured (`minimal` = compact only). */
+  private contextSections(task: TaskCard | null, session: SessionCard, role: RoleId): string | undefined {
+    if (!task) return undefined
+    const level = this.hub.config.context_level
+    const parts: string[] = [this.hub.context.renderMissionSection(task, session.session_id, level)]
+    if (level !== 'minimal') parts.push(this.hub.context.renderPlatformSection(role))
+    return parts.join('\n\n')
   }
 
   private launch(

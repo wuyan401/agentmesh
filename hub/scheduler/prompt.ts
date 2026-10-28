@@ -32,6 +32,14 @@ export interface PromptInput {
   userMessage?: string
   /** Role-specific brief appended before the "start now" section. */
   extraSection?: string
+  /**
+   * §3.1/§3.2 injection (V2): "你在哪 + 队友" and the platform how-to.
+   *
+   * Rendered by ContextBuilder and handed in as text so this file stays pure. It goes
+   * into the prompt itself, not only into the context file: an agent that never opens
+   * the package must still know where it is and who it is working with.
+   */
+  contextSections?: string
 }
 
 function taskBlock(task: TaskCard, worktree: string): string {
@@ -88,6 +96,12 @@ export function buildPrompt(input: PromptInput): string {
   lines.push('')
   lines.push(renderRoleCard(role))
   lines.push('')
+  if (input.contextSections) {
+    lines.push('---')
+    lines.push('')
+    lines.push(input.contextSections)
+    lines.push('')
+  }
   if (task) {
     lines.push('---')
     lines.push('')

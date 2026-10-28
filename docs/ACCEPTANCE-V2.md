@@ -360,3 +360,141 @@ M5（真实 3 agent e2e + `start_mission` 注入）。
 6. **profile 的 `personality`/`strengths` 等文本维度默认全空**，没有任何自动填充
    （规格没要求，我也没编造人格）。真要用起来得靠人填，或 M4 从协作史里提炼。
 7. **观察台不显示 profile**（M4 的事），现在只能 `mesh profile list/show`。
+
+---
+
+## M3 · 上下文注入 — ✅
+
+「你在哪」（mission/lead/你这一环/完成定义）与「队友」（来自 AgentProfile 的表）
+进 spawn prompt 与上下文包；`minimal` 档只保留第一节的紧凑版；新增 `list_teammates`。
+
+### 1. 改了哪些文件
+
+**新增**
+
+| 文件 | 行数 | 作用 |
+|---|---|---|
+| `hub/core/teammates.ts` | 190 | 队友行的一次性构造 + 表格渲染；`missionOfTask`；prompt 与工具共用，不可能漂移 |
+| `tests/unit/context.test.ts` | 10 项 | 三档差异、每档都含自己的卡与角色、无 mission 退化、表随 mission 变、表随 profile 变、工具与表一致 |
+| `tests/prove/m3-walk.ps1` | 150 | 真跑证据：从真实 spawn 的 session log 里 grep 注入块 |
+
+**修改**
+
+| 文件 | 改了什么 |
+|---|---|
+| `hub/core/context.ts` | `renderMissionSection()`（三档 + 无 mission 退化）、`renderPlatformSection()`（§3.2）；接到 `build()` 靠前的位置 |
+| `hub/scheduler/prompt.ts` | `PromptInput.contextSections`，插在角色卡之后、任务卡之前 |
+| `hub/scheduler/scheduler.ts` | `contextSections()`：按 `config.context_level` 渲染，`minimal` 不带 §3.2 |
+| `hub/core/api.ts` · `hub/mcp/server.ts` | `list_teammates(mission_id?)` 工具 |
+| `hub/core/missions.ts` | `missionOfTask` 改为委托共享实现（去重） |
+| `cli/human.ts` · `cli/mesh.ts` | `mesh teammates [M-000001] [--json]` + help |
+
+### 2. `tsc --noEmit`
+
+```
+$ .\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json
+(no output — 0 errors, exit 0)
+```
+
+### 3. `node --test`
+
+```
+ℹ tests 107
+ℹ pass 107
+ℹ fail 0
+ℹ duration_ms 154413.5241
+```
+
+**107 = 97（M1+M2 及此前全部）+ 10（M3 context）**。
+
+### 4. 真跑证据
+
+`powershell -NoProfile -File tests/prove/m3-walk.ps1`（真实 spawn，不接 LLM）。
+
+**a) 从真实 session log 里 grep 注入块**（`.mesh/logs/S-000003.log`）
+
+```
+[OK  ] ## 你在哪
+[OK  ] ## 队友
+[OK  ] lead：mesh-human
+[OK  ] 自己的 task_id
+[OK  ] 自己的角色
+[OK  ] 队友表头
+[OK  ] scripted-01 的性格
+[OK  ] ## 这个平台怎么用
+```
+
+**b) agent 实际看到的那一段**（从日志里原样取出）
+
+```markdown
+## 你在哪
+
+- Mission：M-000001「做一个带登录的博客」（你是第 1/2 个执行者）
+- Lead：mesh-human —— 它拆的任务，最后由它整合、二次验收并给用户报告
+- 你这一环：T-000001「实现登录接口」，角色 backend_dev
+- 完成定义：你 submit → 一个独立审查者通过 → 平台 scope 终审合并
+- Mission 级验收（决定整体算不算完成）：1) 登录可用
+
+## 队友（本次协作，按参与顺序）
+
+| agent | 性格 | 擅长 | 弱势 | 质量分 | 花费 | 本轮负责 |
+|---|---|---|---|---|---|---|
+| mesh-human | — | — | — | 60 | 1 | lead |
+| scripted-01 ← 你 | 老实、照契约办事 | 接口实现、提交规范 | 不做视觉设计 | 60 | 1 | 实现 T-000001 |
+
+> 不了解队友时，用 `hub.list_teammates("M-000001")` 查全量；不要猜。
+```
+
+表里的性格/擅长/弱势是前一步 `mesh profile set` 手写进去的，不是模板文本（D23）。
+
+**c) 同一份上下文包在磁盘上**（`claim_task` 返回的那份）
+
+```
+context file: .mesh/context/T-000001.md (3009 bytes)
+  [OK  ] ## 你在哪
+  [OK  ] ## 队友
+  [OK  ] Lead：mesh-human
+  [OK  ] T-000001
+  [OK  ] 角色 backend_dev
+```
+
+**d) `mesh teammates M-000001`（工具的表，与注入同一份数据）**
+
+```
+agent            性格        擅长        弱势      质量分  花费  本轮负责
+mesh-human lead  —         —          —       60   1   lead
+scripted-01      老实、照契约办事  接口实现、提交规范  不做视觉设计  60   1   实现 T-000001
+```
+
+**e) `minimal` 档真的更少**（`mesh config set context_level minimal` 后再 spawn 一个 worker）
+
+```
+session log: S-000005.log
+  [OK  ] ## 你在哪（紧凑）
+  [OK  ] ## 队友（minimal 档必须没有）
+  [OK  ] ## 这个平台怎么用（minimal 档必须没有）
+
+## 你在哪（紧凑）
+
+- Mission：M-000001「做一个带登录的博客」，你是第 2/2 个执行者；lead 是 mesh-human
+- 你这一环：T-000002「实现登录页」，角色 frontend_dev
+- 完成定义：你 submit → 一个独立审查者通过 → 平台 scope 终审合并
+```
+
+### 5. 没做到的（不粉饰）
+
+**按指示未做**：M4（协作史目录 + `HISTORY.md` + 观察台 missions 页 + 导出）、M5（真实 3 agent e2e）。
+
+**M3 内部的缺口**：
+
+1. **队友表只覆盖"这个 mission 的参与者"**。跨 mission 的"我以前跟谁合作过"没有——那要 M4 的协作史。
+2. **`minimal` 档在真实运行里只验证了 worker**；lead 回合（`task === null`）根本不注入这两节，
+   它靠 `excerptSection`（mission brief）。这意味着 lead 的 prompt 里没有队友表——
+   规格没要求，但"lead 也要知道队友是谁"其实挺合理，留给 M5 一起看。
+3. **表格对长文本是截断的**（性格 18 字、负责 30 字）。截断用省略号，不撒谎，但信息确实少了；
+   全量在 `list_teammates` 里。
+4. **"你是第 k/n 个执行者"按卡序算**（D22），如果一个 mission 有卡被取消，n 不变、k 会跳过——可接受，
+   但和"人数"不是一回事。
+5. **注入文本没做多语言**，全中文；agent 若是英文模型也能读，但没测过。
+6. **上下文包体积**：standard 档 3009 bytes，full 档会更大；prompt 也变长了。
+   目前没做 token 预算，只是"够小"。
