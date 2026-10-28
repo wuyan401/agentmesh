@@ -14,13 +14,13 @@ import { HubApi } from '../hub/core/api.ts'
 import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
 import { loadConfig, patchConfig } from '../hub/core/config.ts'
 import { Scheduler } from '../hub/scheduler/scheduler.ts'
+import { Hub } from '../hub/core/hub.ts'
 import { Sentinel } from '../hub/sentinel/sentinel.ts'
 import { detectAgents, defaultDetectContext } from '../hub/adapters/detect.ts'
 import { ROLE_CARDS, getRoleCard, isRoleId } from '../hub/roles/cards.ts'
 import { ensureMeshRef, scopeCheck } from '../hub/core/mergeGate.ts'
 import { isProcessAlive } from '../hub/core/lock.ts'
 import { sleepSync, writeJsonAtomic } from '../hub/core/fsx.ts'
-import type { Hub } from '../hub/core/hub.ts'
 import type { RoleId } from '../hub/core/types.ts'
 import {
   bool,
@@ -998,11 +998,15 @@ export function cmdConfig(parsed: ParsedArgs, hub: Hub): number {
 export function cmdServe(parsed: ParsedArgs, hub: Hub): Promise<number> {
   const port = num(parsed, 'port') ?? 8787
   const host = str(parsed, 'host') ?? '127.0.0.1'
+  // `--dir` lets you watch a project without cd-ing into it.
+  const dir = str(parsed, 'dir')
+  const target = dir ? Hub.openOrThrow(path.resolve(dir)) : hub
   return import('../hub/web/server.ts')
-    .then((mod) => mod.startServer({ hub, port, host }))
+    .then((mod) => mod.startServer({ hub: target, port, host }))
     .then((started) => {
       process.stdout.write(`${style.green('✔')} dashboard: ${started.url}\n`)
-      process.stdout.write(`${style.dim('Ctrl+C 退出（只读观察台；写操作仍走 CLI / agent 工具）')}\n`)
+      process.stdout.write(`${style.dim(`  项目：${target.paths.root}`)}\n`)
+      process.stdout.write(`${style.dim('  Ctrl+C 退出（只读观察台；写操作仍走 CLI / agent 工具）')}\n`)
       return new Promise<number>(() => {
         process.on('SIGINT', () => process.exit(0))
       })

@@ -10,6 +10,9 @@
 
 import { parseArgs, reportError, requireHub, style, tryHub } from './common.ts'
 import type { ParsedArgs } from './common.ts'
+import path from 'node:path'
+import { Hub } from '../hub/core/hub.ts'
+import { MeshPaths } from '../hub/core/paths.ts'
 import { AGENT_COMMANDS, runAgentBoard, runAgentCommand } from './agent.ts'
 import {
   cmdAgents,
@@ -111,10 +114,13 @@ async function main(argv: string[]): Promise<number> {
   if (command === 'roles') return cmdRoles(parsed)
   if (command === 'doctor') return cmdDoctor(parsed)
 
-  const hub = tryHub()
+  // `--dir <project>` works for every command, so you never have to cd.
+  const dirFlag = parsed.flags.get('dir')
+  const hub = typeof dirFlag === 'string' ? (MeshPaths.tryDiscover(path.resolve(dirFlag)) ? Hub.openOrThrow(dirFlag) : null) : tryHub()
   if (!hub) {
     throw new MeshError(MESH_ERRORS.NOT_INITIALIZED, 'no .mesh/ found here; run `mesh init` first', {
       cwd: process.cwd(),
+      hint: 'or point at an initialised project with `--dir <path>`',
     })
   }
 
