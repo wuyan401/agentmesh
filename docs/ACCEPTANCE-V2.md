@@ -1,7 +1,7 @@
 # V2 验收报告
 
 > 依据 `docs/V2-MISSION.md` §7/§9。每个里程碑：`tsc --noEmit` 零错误、`node --test` 全绿、
-> **真跑一次**。本轮只做 **M1**，M2–M5 未动（按指示停下等验收）。
+> **真跑一次**。M1 已验收；本轮做 **M2**，M3–M5 未动。
 
 ---
 
@@ -208,3 +208,155 @@ M-000001  completed  做一个带登录的博客  mesh-human  3/3  1
 7. **人类 lead 的会话不会自动结束**。`mesh mission lead` 建的署名会话在 mission 完成后仍是
    `active`（无进程），`mesh status` 里会看到一个 `lead` 会话挂着。不影响任何判定（D6），
    但观感上应该由 M4 的 `mesh mission close` 收尾。
+
+---
+
+## M2 · 评分与换人 — ✅
+
+`AgentProfile`（九个维度 + 互评 + 自动统计）、`rate_peer` 防刷边界与加权移动平均、
+`pickAgent` 打分排序（稳定可复现）、打回换人（`rejection_count` + `reassign_after_rejections`）。
+
+### 1. 改了哪些文件
+
+**新增**
+
+| 文件 | 行数 | 作用 |
+|---|---|---|
+| `hub/core/profiles.ts` | 380 | ProfileService：九维读写、`rate_peer` 全部边界、WMA、自动统计 |
+| `hub/scheduler/scoring.ts` | 148 | §2.2 公式的纯函数：`scoreAgent` / `specialtyMatch` / `rankAgents`（无 I/O，好测） |
+| `cli/profile.ts` | 250 | `mesh profile list/show/get/set/backfill` + `mesh rate-peer` |
+| `schemas/profile.schema.json` | 77 | AgentProfile 的 JSON Schema |
+| `tests/unit/scoring.test.ts` | 13 项 | 公式可复现、tie-break、`profile set` 影响派发、互评边界 |
+| `tests/unit/reassign.test.ts` | 8 项 | 计数、阈值、排除历史实现者、无候选 blocked、`preferred_agent` 不能开后门 |
+| `tests/unit/process.test.ts` | 3 项 | 你改的两处 `runForeground` 回归（stdin 不挂、超时仍留输出） |
+| `tests/prove/m2-walk.ps1` | 96 | 两条真跑证据：手编影响派发、两次打回换人 |
+
+**修改**
+
+| 文件 | 改了什么 |
+|---|---|
+| `hub/core/types.ts` | `AgentProfile`/`PeerReview`/`ProfileStats`/`PEER_SCORE_KEYS`；`TaskCard.rejection_count`/`rejected_by`；默认分 60/70 |
+| `hub/core/schema.ts` | `validateAgentProfile`（九个维度 + 每条互评 + 统计 + 时间戳） |
+| `hub/core/paths.ts` · `store.ts` | `.mesh/profiles/<agent_id>.json`；`listProfiles/getProfile/saveProfile` |
+| `hub/core/board.ts` | `recordVerdict(rejected)` 累加 `rejection_count` 并把实现者记进 `rejected_by`；每次判决回写 profile 统计；**修掉返工 claim 的两个 V1 bug**（D19） |
+| `hub/scheduler/scheduler.ts` | `rankCandidates` / `selectAgent` / `pickAgent(role,task,mission?)` 打分排序；`requeueRejected` 让打回的卡每 tick 回队；派发器在无候选时按 §2.3 置 blocked |
+| `hub/core/hub.ts` | `profiles` 服务接线（Board 与 MissionService 都拿到它） |
+| `hub/core/missions.ts` | mission 级打回时给实现者记 `rounds`；参与者入册时记 `missions` |
+| `hub/core/api.ts` · `hub/mcp/server.ts` | `get_profile` / `rate_peer` 两个工具 |
+| `hub/core/init.ts` | `mesh init` 时给每个 agent 补一份 profile（只补缺，不覆盖） |
+| `hub/core/errors.ts` | `MESH_RATE_DENIED` |
+| `cli/common.ts` | `duration()`：`--timeout` 默认单位改成**秒**，支持 `500ms`/`30s`/`5m`（D17） |
+| `cli/{mesh,human,mission,agent}.ts` | 路由、help（含单位说明）、所有 `--timeout` 改用 `duration()` |
+| `tests/fixtures/*` | 四个脚本 agent（两个可互换的 worker + 一个必被拒的坏 worker）；`MESH_SCRIPTED_MODE=bad` 让 worker 产出不合格件 |
+| `.gitignore` | 忽略 `.tools/`（我的临时脚本） |
+
+（`hub/scheduler/process.ts` 的改动是你做的两处修复，本轮一并提交，未再改动。）
+
+### 2. `tsc --noEmit` 真实输出
+
+```
+$ .\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json
+lines=0 exit=0
+```
+
+（0 错误时 tsc 无输出，这里带上了行数与退出码。）
+
+### 3. `node --test` 真实统计
+
+```
+ℹ tests 97
+ℹ pass 97
+ℹ fail 0
+ℹ duration_ms 128095.8175
+```
+
+**97 = 73（M1 及此前全部）+ 24（M2：13 scoring + 8 reassign + 3 process）**。红队 11 项继续全绿。
+
+### 4. 真跑证据
+
+脚本：`tests/prove/m2-walk.ps1`（每次重建 scratch 项目，真实进程，不接 LLM）。
+
+**a) 两个可互换的 worker：默认同分，按 agent_id 字典序**
+
+```
+✔ T-000001 ready 实现限流器
+T-000001 implementer = scripted-01          ← 同分 → id 最小者
+```
+
+**b) 手编 scripted-03 的 quality_score=95，下一次派发立刻听它的**
+
+```
+✔ scripted-03.quality_score = 95
+  manual_locked=true · 下一次派发按新分数排序
+✔ T-000002 ready 实现缓存层
+T-000002 implementer = scripted-03          ← 期望 scripted-03 ✔
+```
+
+`mesh profile show scripted-03` 的九个维度（表头就是规格里那九个词）：
+
+```
+  性格　　  —        擅长　　  —        弱势　　  —
+  能力范围  M1 scaffolding: claim → write → commit → submit, no LLM
+  独特细节  —        质量分　  95       花费　　  1
+  可靠性　  70       速度　　  —
+```
+
+**c) 打回换人：坏的 worker 先干、被拒两次、然后必须换手**
+
+为了让"换人"确实由 §2.3 触发（而不是被别的 agent 的高分顶掉），先把三个 worker 的分数拉开：
+
+```
+✔ scripted-bad.quality_score = 99
+✔ scripted-01.quality_score = 40
+✔ scripted-03.quality_score = 40
+```
+
+时间线（真实进程，真实 commit）：
+
+```
+T-000003: ready/                 -> claimed/scripted-bad   (rejections=0)
+T-000003: claimed/scripted-bad   -> submitted/scripted-bad (rejections=0)
+T-000003: submitted/scripted-bad -> rejected/scripted-bad  (rejections=1)   ← 第一次打回
+T-000003: rejected/scripted-bad  -> claimed/scripted-bad   (rejections=1)   ← 未到阈值，允许重试
+T-000003: submitted/scripted-bad -> rejected/scripted-bad  (rejections=2)   ← 第二次打回
+T-000003: rejected/scripted-bad  -> claimed/scripted-01    (rejections=2)   ← 排除历史实现者，换人
+T-000003: submitted/scripted-01  -> approved/scripted-01   (rejections=2)
+✔ T-000003 merged 36627fd8 (strict)
+T-000003 final: status=merged impl=scripted-01 rejections=2 rejected_by=[scripted-bad]
+```
+
+（换到 `scripted-01` 而不是 03，因为两者都是 40 分 → 又是 agent_id 字典序。）
+
+**d) 统计是自动攒出来的**
+
+```
+Agent         状态     来源  质量分  花费  可靠性  成功率
+scripted-bad  ready  手编  99    1    0     0%
+  scripted-bad 战绩  任务 2 · 通过 0 · 打回 2 · mission 0 · 轮次 2 · 成功率 0%
+  锁定  人工手编（互评不覆盖质量分）
+```
+
+主分支上三条合并提交都是 scope 终审过的 strict 合并。
+
+### 5. 没做到的（不粉饰）
+
+**按指示未做**：M3（上下文注入两节 + `list_teammates`）、M4（协作史目录 + 观察台 missions 页 + 导出）、
+M5（真实 3 agent e2e + `start_mission` 注入）。
+
+**M2 内部的缺口**：
+
+1. **`rate_peer` 只做了单测，没有真跑证据**。边界都测了（同一 mission、不能自评、一人一次、
+   0-100 越界、WMA 精确值、手编锁定），但验收脚本里没有让两个真实进程互相打分——
+   脚本 agent 不会主动调用 `rate_peer`，我也没有在 CLI 里伪造一次。
+   `mesh rate-peer` 存在且与工具同义，但这条链路的"真跑"欠着。
+2. **`stats.rounds` 会重复计数**：一阶打回时 `noteOutcome(rejected)` 已经 +1，
+   mission 二次验收打回又 `noteRound` +1。语义上确实是两件事，但同一张卡被打回两次会看到 +3。
+   要不要合并成一个口径，需要你定。
+3. **换人只看分数，不看"为什么被拒"**。`ReviewRecord.notes` 里写着"缺测试"，
+   换人时没用上——没有"按弱势匹配"的逻辑。
+4. **`specialtyMatch` 是纯词面匹配**（D14），同义词、缩写、跨语言（"登录" vs "auth"）都不匹配。
+5. **手编高分可以顶着 0% 成功率**（D20）。这是规格直译，但值得你知道：
+   `scripted-bad` 99 分 / 0% 仍然会被派活，除非人把它改掉。
+6. **profile 的 `personality`/`strengths` 等文本维度默认全空**，没有任何自动填充
+   （规格没要求，我也没编造人格）。真要用起来得靠人填，或 M4 从协作史里提炼。
+7. **观察台不显示 profile**（M4 的事），现在只能 `mesh profile list/show`。

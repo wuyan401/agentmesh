@@ -54,6 +54,7 @@ import {
   cmdPlanMission,
   cmdWriteReport,
 } from './mission.ts'
+import { cmdProfile, cmdRatePeer } from './profile.ts'
 import { createRequire } from 'node:module'
 
 const require_ = createRequire(import.meta.url)
@@ -61,9 +62,23 @@ const VERSION = (require_('../package.json') as { version: string }).version
 
 const HELP = `${style.bold('AgentMesh')} ${style.dim(`v${VERSION}`)} — 让异构 CLI Agent 像团队一样协作
 
+${style.bold('评分（V2）')}
+  mesh profile list                      每个 agent 的九个维度一览（手编过的标"手编"）
+  mesh profile show <agent>              完整 profile：九个维度 + 互评 + 战绩
+  mesh profile get <agent> [field]       读一个字段（可脚本化）
+  mesh profile set <agent> <field> <value>
+                                         手编一个字段；手编后 manual_locked=true，
+                                         互评不再覆盖质量分，且**下一次派发**按新分数排序
+                                         fields: personality | strengths | weaknesses |
+                                         capability_notes | specialties | quality_score |
+                                         cost_tier | reliability | speed_notes | manual_locked
+  mesh rate-peer <agent> --mission M-1 --quality 90 --cooperation 85 --evidence 95 --speed 70
+                                         互评（必须同一 mission 参与过，不能评自己，一人一次）
+
 ${style.bold('Mission（V2）')}
-  mesh mission "你想做什么" [--lead id] [--accept "…"] [--dry-plan]
+  mesh mission "你想做什么" [--lead id] [--accept "…"] [--dry-plan] [--timeout 900]
                                          开一个 mission，选 lead 并让它拆解
+                                         --timeout 单位是**秒**（也接受 500ms / 5m）
   mesh missions [--status completed]      mission 列表
   mesh mission <M-000001>                 mission 详情：计划、卡状态、审查、报告
   mesh mission report <M-000001>          打印最终报告
@@ -90,8 +105,9 @@ ${style.bold('人类命令')}
   mesh task <T-000001>                   任务卡详情（含 scope 预检）
   mesh new "标题" --role r --write g --accept "条目"
                                          建任务卡（有 MESH_SESSION_ID 时以该会话身份下单）
-  mesh assign <T-000001> [--agent id] [--wait]
+  mesh assign <T-000001> [--agent id] [--wait [--timeout 900]]
                                          手动派发（同样走 Session 创建流程）
+                                         --timeout 单位是**秒**（也接受 500ms / 5m）
   mesh agents [list|doctor|detect|add|enable|disable]
   mesh agents verify [agent_id]          实跑一次会话，验证"原生工具 + hub 工具"都在（超集性）
   mesh sessions [ps|logs <id>|kill <id>] 会话
@@ -115,7 +131,7 @@ ${style.bold('Agent 命令（文件协议）')}  会话从 --session 或 MESH_SE
   mesh ask <T-000001> "问题"              向 Coordinator 提问
   mesh escalate "原因" [--task id]        升级／越界上报
   mesh submit <T-000001> --summary "…"   提交审查
-  mesh messages / wait [--timeout ms]    收件箱 / 长轮询
+  mesh messages / wait [--timeout 30]    收件箱 / 长轮询（秒；也可写 500ms / 5m）
   mesh send --to coordinator:* --type board.update --body "…"
   mesh put <path> --file F | --content "…"   非代码工件入库
   mesh get <path> / artifacts            读工件 / 列工件
@@ -165,6 +181,16 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
     return runAgentCommand(parsed, hub)
+  }
+
+  // -- profiles / peer review (V2 §2) --------------------------------------
+  switch (command) {
+    case 'profile':
+      return cmdProfile(parsed, hub)
+    case 'rate-peer':
+      return cmdRatePeer(parsed, hub)
+    default:
+      break
   }
 
   // -- missions (V2) -------------------------------------------------------

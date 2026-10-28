@@ -10,11 +10,11 @@
  */
 
 import { MESH_ERRORS, MeshError } from './errors.ts'
-import { ROLE_IDS, TASK_STATUSES, MESSAGE_TYPES, MISSION_STATUSES } from './types.ts'
-import type { AgentCard, Message, MissionCard, RoleCard, SessionCard, TaskCard } from './types.ts'
+import { ROLE_IDS, TASK_STATUSES, MESSAGE_TYPES, MISSION_STATUSES, PEER_SCORE_KEYS } from './types.ts'
+import type { AgentCard, AgentProfile, Message, MissionCard, RoleCard, SessionCard, TaskCard } from './types.ts'
 import { normRel } from './fsx.ts'
 
-export type SchemaKind = 'role' | 'agent' | 'session' | 'task' | 'message' | 'mission'
+export type SchemaKind = 'role' | 'agent' | 'session' | 'task' | 'message' | 'mission' | 'profile'
 
 export class ValidationError extends MeshError {
   readonly errors: string[]
@@ -196,6 +196,10 @@ export function validateTaskCard(card: TaskCard): string[] {
   if (card.preferred_agent !== undefined && card.preferred_agent !== null && !isStr(card.preferred_agent)) {
     e.push('preferred_agent must be null or an agent id')
   }
+  if (card.rejection_count !== undefined && (!Number.isInteger(card.rejection_count) || card.rejection_count < 0)) {
+    e.push('rejection_count must be a non-negative integer')
+  }
+  if (card.rejected_by !== undefined && !strArray(card.rejected_by)) e.push('rejected_by must be a string array')
   if (!Array.isArray(card.history)) e.push('history must be an array')
   else {
     for (const h of card.history) {
@@ -204,6 +208,48 @@ export function validateTaskCard(card: TaskCard): string[] {
     }
   }
   if (!strArray(card.tags)) e.push('tags must be a string array')
+  return e
+}
+
+export function validateAgentProfile(p: AgentProfile): string[] {
+  const e: string[] = []
+  if (!isStr(p.agent_id) || !ID_PATTERNS.agent.test(p.agent_id)) e.push('agent_id must match [a-z0-9][a-z0-9._-]{1,63}')
+  if (!isStr(p.personality)) e.push('personality must be a string')
+  if (!strArray(p.strengths)) e.push('strengths must be a string array')
+  if (!strArray(p.weaknesses)) e.push('weaknesses must be a string array')
+  if (!isStr(p.capability_notes)) e.push('capability_notes must be a string')
+  if (!strArray(p.specialties)) e.push('specialties must be a string array')
+  const inRange = (n: unknown): boolean => typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100
+  if (!inRange(p.quality_score)) e.push('quality_score must be 0-100')
+  if (![1, 2, 3].includes(p.cost_tier)) e.push('cost_tier must be 1|2|3')
+  if (!inRange(p.reliability)) e.push('reliability must be 0-100')
+  if (!isStr(p.speed_notes)) e.push('speed_notes must be a string')
+  if (typeof p.manual_locked !== 'boolean') e.push('manual_locked must be boolean')
+  if (!Array.isArray(p.peer_reviews)) e.push('peer_reviews must be an array')
+  else {
+    for (const r of p.peer_reviews) {
+      if (!r || !isStr(r.by_agent) || !isStr(r.mission_id)) {
+        e.push('peer_reviews entries must be {by_agent, mission_id, scores, comment, at}')
+        continue
+      }
+      if (!r.scores || typeof r.scores !== 'object') {
+        e.push(`peer review by ${r.by_agent} is missing scores`)
+        continue
+      }
+      for (const key of PEER_SCORE_KEYS) {
+        if (!inRange(r.scores[key])) e.push(`peer review by ${r.by_agent}: ${key} must be 0-100`)
+      }
+      if (!isIso(r.at)) e.push(`peer review by ${r.by_agent}: at must be an ISO timestamp`)
+    }
+  }
+  if (!p.stats || typeof p.stats !== 'object') e.push('stats must be an object')
+  else {
+    for (const key of ['missions', 'tasks', 'approved', 'rejected', 'rounds'] as const) {
+      const value = p.stats[key]
+      if (!Number.isInteger(value) || value < 0) e.push(`stats.${key} must be a non-negative integer`)
+    }
+  }
+  if (!isIso(p.updated_at)) e.push('updated_at must be an ISO timestamp')
   return e
 }
 
@@ -241,6 +287,7 @@ const validators: Record<SchemaKind, (v: unknown) => string[]> = {
   task: (v) => validateTaskCard(v as TaskCard),
   message: (v) => validateMessage(v as Message),
   mission: (v) => validateMissionCard(v as MissionCard),
+  profile: (v) => validateAgentProfile(v as AgentProfile),
 }
 
 export const ID_PATTERN = ID_PATTERNS

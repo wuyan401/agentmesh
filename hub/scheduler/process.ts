@@ -107,18 +107,31 @@ export function runForeground(plan: SpawnPlan, logFile: string, timeoutMs = 600_
     '',
   ].join('\n')
   fs.appendFileSync(logFile, header)
-  const res = spawnSync(plan.command, plan.args, {
-    cwd: plan.cwd,
-    env: plan.env,
-    encoding: 'utf8',
-    timeout: timeoutMs,
-    maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true,
-    input: plan.stdin,
-  })
-  const stdout = res.stdout ?? ''
-  const stderr = res.stderr ?? ''
-  fs.appendFileSync(logFile, `${stdout}${stderr ? `\n[stderr]\n${stderr}` : ''}\n`)
+  const startOffset = fs.statSync(logFile).size
+  const outFd = fs.openSync(logFile, 'a')
+  let res: ReturnType<typeof spawnSync>
+  try {
+    res = spawnSync(plan.command, plan.args, {
+      cwd: plan.cwd,
+      env: plan.env,
+      timeout: timeoutMs,
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+      input: plan.stdin,
+      // Redirect straight into the log fd, exactly like the async spawn path.
+      // Two reasons, both learned the hard way:
+      //  - stdin must be 'ignore' when nothing is fed, or a one-shot CLI
+      //    (dsh headless) blocks forever waiting on a non-tty pipe;
+      //  - stdout must be a file, not a pipe, or the child block-buffers and
+      //    every line is lost when the turn is killed on timeout.
+      stdio: [plan.stdin ? 'pipe' : 'ignore', outFd, outFd],
+    })
+  } finally {
+    fs.closeSync(outFd)
+  }
+  const stdout = fs.readFileSync(logFile).subarray(startOffset).toString('utf8')
+  const stderr = res.error ? String(res.error.message ?? res.error) : ''
+  if (stderr) fs.appendFileSync(logFile, `\n[stderr]\n${stderr}\n`)
   return {
     code: res.status,
     stdout,

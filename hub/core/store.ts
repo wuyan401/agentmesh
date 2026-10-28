@@ -14,7 +14,7 @@ import { MeshError, MESH_ERRORS } from './errors.ts'
 import { appendJsonl, ensureDir, exists, listFiles, nowIso, pad, readJson, readJsonIfExists, readJsonl, sha256, writeFileAtomic, writeJsonAtomic } from './fsx.ts'
 import { withLock } from './lock.ts'
 import { assertValid } from './schema.ts'
-import type { AgentCard, Message, MeshState, MissionCard, ReviewRecord, SessionCard, TaskCard, ViolationRecord } from './types.ts'
+import type { AgentCard, AgentProfile, Message, MeshState, MissionCard, ReviewRecord, SessionCard, TaskCard, ViolationRecord } from './types.ts'
 
 export type IdKind = 'task' | 'message' | 'session' | 'review' | 'violation' | 'mission'
 
@@ -109,6 +109,28 @@ export class MeshStore {
 
   deleteTask(taskId: string): void {
     fs.rmSync(this.paths.taskFile(taskId), { force: true })
+  }
+
+  // -- profiles (V2) -------------------------------------------------------
+
+  listProfiles(): AgentProfile[] {
+    const out: AgentProfile[] = []
+    for (const file of listFiles(this.paths.profilesDir, '.json')) {
+      const profile = readJsonIfExists<AgentProfile>(file)
+      if (profile) out.push(profile)
+    }
+    out.sort((a, b) => a.agent_id.localeCompare(b.agent_id))
+    return out
+  }
+
+  getProfile(agentId: string): AgentProfile | null {
+    return readJsonIfExists<AgentProfile>(this.paths.profileFile(agentId))
+  }
+
+  saveProfile(profile: AgentProfile): void {
+    assertValid('profile', profile, profile.agent_id)
+    profile.updated_at = nowIso()
+    writeJsonAtomic(this.paths.profileFile(profile.agent_id), profile)
   }
 
   // -- missions (V2) -------------------------------------------------------

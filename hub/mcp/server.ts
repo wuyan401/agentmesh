@@ -315,6 +315,44 @@ const TOOLS: ToolDef[] = [
     handler: (api, session, args) => api.write_report(session, arg(args, 'mission_id'), arg(args, 'markdown')),
   },
   {
+    name: 'get_profile',
+    description:
+      'Read an agent profile: the nine dimensions (personality/strengths/weaknesses/capability_notes/specialties/quality_score/cost_tier/reliability/speed_notes) plus peer reviews and success stats.',
+    inputSchema: obj({ agent_id: str('agent id') }, ['agent_id']),
+    handler: (api, session, args) => api.get_profile(session, arg(args, 'agent_id')),
+  },
+  {
+    name: 'rate_peer',
+    description:
+      'Rate a teammate you actually worked with on this mission, 0-100 on four dimensions. Boundaries are enforced in code: same mission only, never yourself, one review per (you, target, mission) — re-rating overwrites. quality_score moves by a weighted moving average unless a human locked the profile.',
+    inputSchema: obj({
+      agent_id: str('who you are rating'),
+      mission_id: str('the mission you both took part in'),
+      quality: num('0-100'),
+      cooperation: num('0-100'),
+      evidence: num('0-100'),
+      speed: num('0-100'),
+      comment: str('optional: what you actually observed'),
+      task_id: str('optional related task'),
+    }, ['agent_id', 'mission_id', 'quality', 'cooperation', 'evidence', 'speed']),
+    handler: (api, session, args) => {
+      const scores = {
+        quality: Number(args['quality']),
+        cooperation: Number(args['cooperation']),
+        evidence: Number(args['evidence']),
+        speed: Number(args['speed']),
+      }
+      return api.rate_peer(
+        session,
+        arg(args, 'agent_id'),
+        arg(args, 'mission_id'),
+        scores,
+        optStr(args, 'comment'),
+        optStr(args, 'task_id'),
+      )
+    },
+  },
+  {
     name: 'send',
     description:
       'Send a message to a role thread. Addressing is by role (never by agent id): the hub resolves the current holder and queues the message if the role is vacant.',

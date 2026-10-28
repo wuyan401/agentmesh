@@ -16,11 +16,13 @@ import { isProcessAlive } from '../core/lock.ts'
 import { applyTransition } from '../core/stateMachine.ts'
 import { withLock } from '../core/lock.ts'
 import { buildSpawnPlan, describePlan, toolPrefixFor } from '../adapters/index.ts'
+import { rankAgents, scoreAgent } from './scoring.ts'
+import type { ScoredAgent } from './scoring.ts'
 import { spawnSessionProcess, killProcess, tailLog, runForeground } from './process.ts'
 import { buildPrompt, buildThreadDigest } from './prompt.ts'
 import type { SpawnPlan as SpawnPlanType } from '../adapters/types.ts'
 import type { Hub } from '../core/hub.ts'
-import type { AgentCard, RoleId, SessionCard, TaskCard } from '../core/types.ts'
+import type { AgentCard, MissionCard, RoleId, SessionCard, TaskCard } from '../core/types.ts'
 import type { SpawnContext } from '../adapters/types.ts'
 
 export interface SpawnRecord {
@@ -105,6 +107,7 @@ export class Scheduler {
     this.releaseStrandedTasks(report)
     this.reapSubmittedWork(report)
     this.releaseAbandonedReviews(report)
+    this.requeueRejected(report)
     this.publishUnblocked()
     // Missions first: a planning mission that just finished needs its cards to become
     // claimable in this same tick, not the next one.
@@ -243,6 +246,33 @@ export class Scheduler {
     }
   }
 
+  /**
+   * Put rejected cards back on the open board (§2.3).
+   *
+   * A rejection ends the working session, so a rejected card is nobody's work. It has
+   * to go back to `ready` or the counter could never reach the threshold and the card
+   * would sit there until a human noticed. Who gets it next is the picker's decision:
+   * below `reassign_after_rejections` the same agent may try again, at/above it the
+   * rejectees are excluded and the best remaining agent takes over.
+   */
+  private requeueRejected(report: TickReport): void {
+    const threshold = this.hub.config.reassign_after_rejections
+    for (const task of this.hub.store.listTasks()) {
+      if (task.status !== 'rejected') continue
+      const count = task.rejection_count ?? 0
+      const requeued = this.hub.board.requeueRejectedTask(
+        task.task_id,
+        count >= threshold ? `reassigned after ${count} rejections` : `retry (${count}/${threshold} rejections)`,
+      )
+      if (requeued) {
+        report.skipped.push({
+          task_id: task.task_id,
+          reason: count >= threshold ? `requeued for reassignment (${count} rejections)` : `requeued for retry (${count} rejections)`,
+        })
+      }
+    }
+  }
+
   private publishUnblocked(): void {
     for (const draft of this.hub.board.readyCandidates()) {
       this.hub.board.publishTask(draft.task_id)
@@ -313,22 +343,96 @@ export class Scheduler {
     return this.hub.store.activeSessionsOfAgent(agentId).length
   }
 
-  pickAgent(role: RoleId, task: TaskCard | null): AgentCard | null {
-    const candidates = this.hub.store
-      .listAgents()
-      .filter((a) => a.enabled)
-      .filter((a) => a.kind !== 'builtin')
-      .filter((a) => a.capabilities.includes(role))
-      .filter((a) => this.hub.identity.concurrencyAvailable(a) > 0)
-      .filter((a) => (task ? this.hub.identity.sodConflict(task, a.agent_id, role) === null : true))
-      .sort((a, b) => a.cost_tier - b.cost_tier || this.activeCount(a.agent_id) - this.activeCount(b.agent_id) || a.agent_id.localeCompare(b.agent_id))
-    // V2: the lead may name the implementer. Honour it when that agent is eligible
-    // (capabilities, concurrency, SoD) — the lead's intent never overrides the rules.
-    if (task?.preferred_agent) {
-      const preferred = candidates.find((a) => a.agent_id === task.preferred_agent)
-      if (preferred) return preferred
+  /**
+   * Rank the eligible agents for a card by the §2.2 score.
+   *
+   * Eligibility is exactly V1's: enabled, not the builtin core, holds the role,
+   * has concurrency left, and passes SoD. Scoring only decides the *order* of
+   * people who are already allowed to do the work — it never grants permission.
+   */
+  rankCandidates(role: RoleId, task: TaskCard | null, mission?: MissionCard | null): ScoredAgent[] {
+    const scored: ScoredAgent[] = []
+    for (const agent of this.hub.store.listAgents()) {
+      if (!agent.enabled || agent.kind === 'builtin') continue
+      if (!agent.capabilities.includes(role)) continue
+      if (this.hub.identity.concurrencyAvailable(agent) <= 0) continue
+      if (task && this.hub.identity.sodConflict(task, agent.agent_id, role) !== null) continue
+      scored.push(
+        scoreAgent({
+          agent,
+          profile: this.hub.store.getProfile(agent.agent_id),
+          load: this.activeCount(agent.agent_id),
+          task,
+        }),
+      )
     }
-    return candidates[0] ?? null
+    void mission
+    return rankAgents(scored)
+  }
+
+  /** The effective choice: highest score, ties broken by agent_id (reproducible). */
+  pickAgent(role: RoleId, task: TaskCard | null, mission?: MissionCard | null): AgentCard | null {
+    return this.selectAgent(role, task, mission).agent
+  }
+
+  /**
+   * The full dispatch decision, including *why* it is not somebody.
+   *
+   * §2.3 is enforced here rather than in the caller: once a card has been rejected
+   * `reassign_after_rejections` times, the agents who were already rejected on it are
+   * removed from the candidate set. If that empties the set the card is blocked —
+   * "绝不悄悄重派同一个人" is a property of this function, not of the caller's manners.
+   */
+  selectAgent(
+    role: RoleId,
+    task: TaskCard | null,
+    mission?: MissionCard | null,
+  ): { agent: AgentCard | null; scored: ScoredAgent[]; excluded: string[]; blocked: string | null } {
+    const reassignAt = this.hub.config.reassign_after_rejections
+    const rejectionCount = task?.rejection_count ?? 0
+    const mustReassign = Boolean(task) && rejectionCount >= reassignAt
+    const excluded = new Set<string>()
+    if (mustReassign && task) {
+      if (task.implementer_agent) excluded.add(task.implementer_agent)
+      for (const agentId of task.rejected_by ?? []) excluded.add(agentId)
+    }
+
+    const ranked = this.rankCandidates(role, task, mission)
+    const remaining = ranked.filter((s) => !excluded.has(s.agent_id))
+
+    if (remaining.length === 0) {
+      if (mustReassign) {
+        return {
+          agent: null,
+          scored: ranked,
+          excluded: [...excluded].sort(),
+          // §2.3 wording, verbatim: the human reading the board must see this exact reason.
+          blocked: '需要更强或更多的 agent',
+        }
+      }
+      return { agent: null, scored: ranked, excluded: [...excluded].sort(), blocked: null }
+    }
+
+    // The lead's explicit choice wins — but never over the exclusion list above.
+    if (!mustReassign && task?.preferred_agent) {
+      const preferred = remaining.find((s) => s.agent_id === task.preferred_agent)
+      if (preferred) {
+        return {
+          agent: this.hub.store.requireAgent(preferred.agent_id),
+          scored: remaining,
+          excluded: [...excluded].sort(),
+          blocked: null,
+        }
+      }
+    }
+
+    const best = remaining[0]!
+    return {
+      agent: this.hub.store.requireAgent(best.agent_id),
+      scored: remaining,
+      excluded: [...excluded].sort(),
+      blocked: null,
+    }
   }
 
   private dispatchWorkers(report: TickReport): void {
@@ -344,13 +448,20 @@ export class Scheduler {
         report.skipped.push({ task_id: task.task_id, reason: 'concurrency budget reached' })
         continue
       }
-      const agent = this.pickAgent(task.role, task)
-      if (!agent) {
-        report.skipped.push({ task_id: task.task_id, reason: `no eligible agent for role ${task.role}` })
+      const mission = this.hub.missions.missionOfTask(task.task_id)
+      const decision = this.selectAgent(task.role, task, mission)
+      if (!decision.agent) {
+        if (decision.blocked) {
+          // §2.3: nobody left who is allowed to touch it → stop, with the reason on the card.
+          this.hub.board.blockTask(task.task_id, decision.blocked, 'hub.scheduler')
+          report.blocked.push({ task_id: task.task_id, reason: decision.blocked })
+        } else {
+          report.skipped.push({ task_id: task.task_id, reason: `no eligible agent for role ${task.role}` })
+        }
         continue
       }
       try {
-        report.dispatched.push(this.spawnWorker(task, agent))
+        report.dispatched.push(this.spawnWorker(task, decision.agent))
       } catch (e) {
         const msg = e instanceof MeshError ? `${e.code}: ${e.message}` : (e as Error).message
         report.skipped.push({ task_id: task.task_id, reason: msg })
@@ -376,6 +487,7 @@ export class Scheduler {
       bound.sandbox = claimed.worktree
       this.hub.store.saveSession(bound)
       this.noteMissionParticipant(claimed.task_id, agent.agent_id)
+      this.hub.profiles.noteTask(agent.agent_id)
       const contextPath = this.ensureContext(task.task_id, session.session_id)
       return this.launch(bound, agent, claimed, contextPath)
     } catch (e) {

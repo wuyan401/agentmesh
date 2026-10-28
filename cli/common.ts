@@ -82,6 +82,38 @@ export function num(parsed: ParsedArgs, key: string): number | undefined {
 }
 
 /**
+ * A duration flag, in **seconds** unless a unit is spelled out.
+ *
+ * `--timeout 300` used to mean 300 *milliseconds*, which bit a human who reasonably
+ * read it as "five minutes": the turn was killed instantly. The default unit is now
+ * seconds, and an explicit suffix always wins:
+ *
+ *   --timeout 300     → 300 s
+ *   --timeout 300s    → 300 s
+ *   --timeout 500ms   → 0.5 s
+ *   --timeout 15m     → 900 s
+ */
+export function duration(parsed: ParsedArgs, key: string): number | undefined {
+  const raw = parsed.flags.get(key)
+  if (raw === undefined || raw === true) return undefined
+  const text = String(raw).trim().toLowerCase()
+  const match = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h)?$/.exec(text)
+  if (!match) {
+    throw new MeshError(
+      MESH_ERRORS.SCHEMA_INVALID,
+      `--${key} must be a duration like 300 (seconds), 500ms, 30s or 5m — got "${text}"`,
+      { flag: key, value: text },
+    )
+  }
+  const value = Number(match[1])
+  const unit = match[2] ?? 's'
+  const factor = unit === 'ms' ? 1 : unit === 's' ? 1000 : unit === 'm' ? 60_000 : 3_600_000
+  const ms = Math.round(value * factor)
+  if (ms <= 0) throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, `--${key} must be greater than zero`)
+  return ms
+}
+
+/**
  * Repeatable flag: `--write a --write b`.
  *
  * Deliberately does NOT split on commas: acceptance criteria and glob patterns

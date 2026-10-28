@@ -14,6 +14,7 @@ import { matchAnyGlob, nowIso, normRel, outOfScope } from './fsx.ts'
 import { withLock } from './lock.ts'
 import { applyTransition } from './stateMachine.ts'
 import { getRoleCard } from '../roles/cards.ts'
+import type { ProfileService } from './profiles.ts'
 import { mergeWithScopeGate, scopeCheck, ScopeViolation, MergeRefused, ensureMeshRef } from './mergeGate.ts'
 import type { Audit } from './audit.ts'
 import type { ContextBuilder, ContextLevel } from './context.ts'
@@ -55,6 +56,7 @@ export class Board {
   readonly bus: MessageBus
   readonly audit: Audit
   readonly context: ContextBuilder
+  readonly profiles: ProfileService
 
   constructor(deps: {
     store: MeshStore
@@ -63,6 +65,7 @@ export class Board {
     bus: MessageBus
     audit: Audit
     context: ContextBuilder
+    profiles: ProfileService
   }) {
     this.store = deps.store
     this.git = deps.git
@@ -70,6 +73,7 @@ export class Board {
     this.bus = deps.bus
     this.audit = deps.audit
     this.context = deps.context
+    this.profiles = deps.profiles
   }
 
   // -- creation ------------------------------------------------------------
@@ -155,6 +159,8 @@ export class Board {
       parent: input.parent ?? null,
       tags: input.tags ?? [],
       preferred_agent: input.preferred_agent ?? null,
+      rejection_count: 0,
+      rejected_by: [],
       history: [],
     }
     if (!roleCard.can_implement && !roleCard.can_review && !roleCard.can_merge) {
@@ -238,7 +244,12 @@ export class Board {
       this.store.paths.lockFile(`task-${taskId}`),
       () => {
         const task = this.store.requireTask(taskId)
-        if (task.claimed_by && task.claimed_by !== sessionId) {
+        // A rejected card is nobody's: the claim that produced it ended with the verdict,
+        // but `claimed_by` still points at the old session. Without this exception the
+        // implementer could never pick its own rework back up (and `rejected → claimed`
+        // is not a legal edge anyway — resuming work enters `in_progress`).
+        const rework = task.status === 'rejected' && task.implementer_agent === agentId
+        if (task.claimed_by && task.claimed_by !== sessionId && !rework) {
           const holder = this.store.getSession(task.claimed_by)
           throw new MeshError(MESH_ERRORS.CLAIM_CONFLICT, `task ${taskId} is already claimed by ${task.claimed_by}`, {
             task_id: taskId,
@@ -247,7 +258,7 @@ export class Board {
             holder_status: holder?.status ?? null,
           })
         }
-        if (task.claimed_by === sessionId) return { task, already: true }
+        if (task.claimed_by === sessionId && !rework) return { task, already: true }
         if (role !== task.role) {
           throw new MeshError(
             MESH_ERRORS.SESSION_ROLE_MISMATCH,
@@ -255,7 +266,6 @@ export class Board {
             { session_role: role, task_role: task.role },
           )
         }
-        const rework = task.status === 'rejected' && task.implementer_agent === agentId
         if (task.status !== 'ready' && !rework) {
           throw new MeshError(
             MESH_ERRORS.TRANSITION_ILLEGAL,
@@ -275,7 +285,12 @@ export class Board {
             { task_id: taskId, unmet },
           )
         }
-        applyTransition(task, 'claimed', { by: sessionId, note: note ?? (rework ? 'rework after rejection' : 'claimed') })
+        // Resuming rejected work enters `in_progress` — `rejected → claimed` is not a
+        // legal edge, and calling it "claimed" would understate that work already started.
+        applyTransition(task, rework ? 'in_progress' : 'claimed', {
+          by: sessionId,
+          note: note ?? (rework ? 'rework after rejection' : 'claimed'),
+        })
         task.claimed_by = sessionId
         task.implementer_agent = agentId
         if (!task.base_commit) task.base_commit = this.git.headSha()
@@ -578,6 +593,15 @@ export class Board {
       }
       this.store.saveReview(review)
       task.reviews.push(reviewId)
+      if (verdict === 'rejected') {
+        // §2.3: a rejection is what eventually forces a reassignment, so it has to be
+        // counted on the card itself — and the rejectee is remembered by name.
+        task.rejection_count = (task.rejection_count ?? 0) + 1
+        const implementer = task.implementer_agent
+        if (implementer && !(task.rejected_by ?? []).includes(implementer)) {
+          task.rejected_by = [...(task.rejected_by ?? []), implementer]
+        }
+      }
       applyTransition(task, verdict === 'approved' ? 'approved' : 'rejected', {
         by: identity.session.session_id,
         note: `${reviewId} ${verdict}`,
@@ -585,6 +609,10 @@ export class Board {
       this.store.saveTask(task)
       return { task, review }
     })
+
+    if (outcome.task.implementer_agent) {
+      this.profiles.noteOutcome(outcome.task.implementer_agent, verdict)
+    }
 
     this.store.boardEvent({ event: `task.${verdict}`, task_id: taskId, review_id: reviewId, by: identity.agent.agent_id })
     if (verdict === 'approved') {

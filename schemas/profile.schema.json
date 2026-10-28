@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/profile.schema.json",
+  "title": "AgentProfile",
+  "description": "The judgement layer for one agent: the nine dimensions a human reads, plus peer reviews and automatic stats. Separate from AgentCard, which is the launch recipe.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_id",
+    "personality",
+    "strengths",
+    "weaknesses",
+    "capability_notes",
+    "specialties",
+    "quality_score",
+    "cost_tier",
+    "reliability",
+    "speed_notes",
+    "manual_locked",
+    "peer_reviews",
+    "stats",
+    "updated_at"
+  ],
+  "properties": {
+    "agent_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "personality": { "type": "string", "description": "性格" },
+    "strengths": { "type": "array", "items": { "type": "string" }, "description": "擅长方向" },
+    "weaknesses": { "type": "array", "items": { "type": "string" }, "description": "弱势方面" },
+    "capability_notes": { "type": "string", "description": "能力范围" },
+    "specialties": { "type": "array", "items": { "type": "string" }, "description": "独特细节" },
+    "quality_score": { "type": "number", "minimum": 0, "maximum": 100, "description": "质量分（0-100）" },
+    "cost_tier": { "type": "integer", "enum": [1, 2, 3], "description": "花费：1 便宜 2 中 3 贵，与 AgentCard 同步" },
+    "reliability": { "type": "number", "minimum": 0, "maximum": 100, "description": "可靠性（成功率，自动统计）" },
+    "speed_notes": { "type": "string", "description": "速度" },
+    "manual_locked": {
+      "type": "boolean",
+      "description": "用户手编后置 true；互评不再覆盖 quality_score"
+    },
+    "peer_reviews": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["by_agent", "mission_id", "task_id", "scores", "comment", "at"],
+        "properties": {
+          "by_agent": { "type": "string" },
+          "mission_id": { "type": "string", "pattern": "^M-[0-9]{6}$" },
+          "task_id": { "type": ["string", "null"] },
+          "scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["quality", "cooperation", "evidence", "speed"],
+            "properties": {
+              "quality": { "type": "number", "minimum": 0, "maximum": 100 },
+              "cooperation": { "type": "number", "minimum": 0, "maximum": 100 },
+              "evidence": { "type": "number", "minimum": 0, "maximum": 100 },
+              "speed": { "type": "number", "minimum": 0, "maximum": 100 }
+            }
+          },
+          "comment": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missions", "tasks", "approved", "rejected", "rounds"],
+      "properties": {
+        "missions": { "type": "integer", "minimum": 0 },
+        "tasks": { "type": "integer", "minimum": 0 },
+        "approved": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "rounds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

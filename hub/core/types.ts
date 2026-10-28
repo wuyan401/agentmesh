@@ -314,6 +314,76 @@ export interface MissionCard {
 }
 
 // ---------------------------------------------------------------------------
+// AgentProfile (V2 scoring)
+// ---------------------------------------------------------------------------
+
+/** The four dimensions a peer scores, each 0-100 (spec §2.1 `scores`). */
+export interface PeerScore {
+  quality: number
+  cooperation: number
+  evidence: number
+  speed: number
+}
+
+export const PEER_SCORE_KEYS = ['quality', 'cooperation', 'evidence', 'speed'] as const
+
+export interface PeerReview {
+  by_agent: string
+  mission_id: string
+  task_id: string | null
+  scores: PeerScore
+  comment: string
+  at: string
+}
+
+export interface ProfileStats {
+  missions: number
+  tasks: number
+  approved: number
+  rejected: number
+  rounds: number
+}
+
+/**
+ * An agent's multi-dimension annotation: what it is like, what it is good at, and
+ * how well it has actually performed. Separate from AgentCard on purpose — the card
+ * is a launch recipe (mechanical), the profile is a judgement (can go stale).
+ *
+ * The nine dimensions a human reads (`mesh profile show`) map 1:1 to
+ * personality / strengths / weaknesses / capability_notes / specialties /
+ * quality_score / cost_tier / reliability / speed_notes.
+ */
+export interface AgentProfile {
+  agent_id: string
+  /** 性格特点 */
+  personality: string
+  /** 擅长方向 */
+  strengths: string[]
+  /** 弱势方面 */
+  weaknesses: string[]
+  /** 能力范围 */
+  capability_notes: string
+  /** 独特细节 */
+  specialties: string[]
+  /** 任务质量 0-100 */
+  quality_score: number
+  /** 花费 1|2|3，与 AgentCard.cost_tier 同步 */
+  cost_tier: 1 | 2 | 3
+  /** 可靠性 0-100，按 success rate 自动统计 */
+  reliability: number
+  /** 速度 */
+  speed_notes: string
+  /** 人工手编过：互评不再覆盖 quality_score */
+  manual_locked: boolean
+  peer_reviews: PeerReview[]
+  stats: ProfileStats
+  updated_at: string
+}
+
+/** Used when an agent has no profile yet (spec §2.2). */
+export const DEFAULT_PROFILE_SCORES = { quality_score: 60, reliability: 70 } as const
+
+// ---------------------------------------------------------------------------
 // Task
 // ---------------------------------------------------------------------------
 
@@ -383,6 +453,10 @@ export interface TaskCard {
   tags: string[]
   /** V2: the lead asked for this specific agent (null = scheduler decides). */
   preferred_agent: string | null
+  /** V2: how many times a review rejected this card (drives reassignment). */
+  rejection_count: number
+  /** V2: agents that were rejected on this card — never silently re-dispatched. */
+  rejected_by: string[]
   history: TaskHistoryEntry[]
 }
 

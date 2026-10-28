@@ -13,7 +13,7 @@ import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
 import { isRoleId } from '../hub/roles/cards.ts'
 import type { Hub } from '../hub/core/hub.ts'
 import type { ApiResult } from '../hub/core/api.ts'
-import { bool, num, printJson, relativeTime, sessionIdFrom, statusBadge, str, style, table } from './common.ts'
+import { bool, duration, num, printJson, relativeTime, sessionIdFrom, statusBadge, str, style, table } from './common.ts'
 import type { ParsedArgs } from './common.ts'
 
 export const AGENT_COMMANDS = [
@@ -187,7 +187,7 @@ export async function runAgentCommand(parsed: ParsedArgs, hub: Hub): Promise<num
       return 0
     }
     case 'wait': {
-      const timeout = num(parsed, 'timeout') ?? 20_000
+      const timeout = duration(parsed, 'timeout') ?? 20_000
       const data = unwrap(await api.wait_messages(sessionIdFrom(parsed), timeout, str(parsed, 'since'))) as {
         count: number
         messages: Array<Record<string, unknown>>

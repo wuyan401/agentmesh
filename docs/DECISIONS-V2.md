@@ -113,3 +113,80 @@ V1 的 `merged` 是终态。V2 的二次验收要能打回一张**已合并**的
    但缺一个"连续失败 N 次就 blocked 上报"的上限。M2 处理 `rejection_count` 时顺手加。
 2. **`plan.json` / `report.md` 不能放项目根**。它们会让工作树变脏，进而被合并终审拒绝。
    这是平台正确行为，但值得在 M4 的 `mesh mission export` 文档里写明"中间文件放 `.mesh/`"。
+
+---
+
+# M2 追加
+
+## D14 · `specialtyMatch` 的具体定义（规格只说了"词面匹配"）
+
+```
+entries = strengths ∪ specialties
+probes(entry) = 英文词（长度≥3）∪ 中文连续段（长度≥2）∪ 每个中文二字词
+haystack = (任务标题 + 角色名，下划线换成空格).toLowerCase()
+match = entries 中被任一 probe 命中的条目数 / entries 总数   （0..1）
+```
+
+**理由：** 不引向量、不引 LLM —— lead 必须能预测"这次会派给谁"。中文没有空格，
+所以额外切二字词，让「后端接口」能命中「接口」。上限 1，权重只有 0.10，
+所以它只在分数咬得很紧时才起作用。
+
+## D15 · `rejected_by` 存的是"被否过的人"
+
+§2.3 的候选排除句写的是「排除 `task.implementer_agent` 与所有 `rejected_by` 里出现过的人」，
+所以数组里必须是**历史实现者**，而不是打回他的人。落地：`recordVerdict(rejected)` 时
+把当前的 `implementer_agent` 追加进去（去重）。打回的人记在 `ReviewRecord.reviewer_agent` 里。
+
+## D16 · `pickAgent(role, task, mission?)` 的 `mission` 参数不参与打分
+
+规格给的签名有三个参数，但 §2.2 的公式里没有 mission 项。M2 接受该参数并留作决策记录
+（谁被考虑过、为什么），**不**让它给"已在 mission 里的 agent"加权——那会让新 agent 永远
+接不到活，而且没人能从公式里看出来。真要这么做应该在 V2.1 明写进公式。
+
+## D17 · `--timeout` 的默认单位从毫秒改成秒
+
+用户实测：`--timeout 300` 被当成 300ms，回合瞬间被杀。现在裸数字 = **秒**，
+并支持后缀：`500ms` / `30s` / `5m` / `1h`。这是刻意的破坏性变更（此前没有任何脚本依赖它），
+理由：一次性 CLI 的回合以秒计，"300" 这个数字在人类心里就是五分钟。
+
+## D18 · 被审查打回的卡每 tick 自动回队
+
+不这样做的话 `rejection_count` 永远到不了 2：打回后会话结束，卡停在 `rejected`，
+没有任何东西会再派它，换人规则就永远不触发。现在的循环是：
+
+```
+rejected ──(下一个 tick)──▶ ready ──pickAgent──▶ 同一人（count < 2，重试）
+                                             └▶ 换人（count ≥ 2，排除历史实现者）
+```
+
+`reassign_after_rejections` 是阈值不是"重试次数"：默认 2 意味着第 2 次打回之后才换人。
+
+## D19 · 修掉一个 V1 就存在的返工 claim bug（M2 单测逼出来的）
+
+`claimLocked` 里有两处问题，只有"同一个 agent 想去返工自己被否的卡"时才会同时暴露：
+
+1. `claimed_by` 还指着上一轮的会话 → `CLAIM_CONFLICT`，谁也领不到；
+2. `applyTransition(task, 'claimed')` 从 `rejected` 出发不是合法边（`TASK_TRANSITIONS.rejected`
+   里只有 `in_progress`/`ready`/`blocked`/`cancelled`）。
+
+修法：允许"自己的 rejected 卡"越过 `claimed_by` 检查，并按合法边进入 `in_progress`
+（语义也对：这不是新领活，是继续干）。M2 的 reassign 单测第一次真正走到这条路径。
+
+## D20 · `manual_locked` 的高分可以顶着 0% 成功率
+
+验收跑里 `scripted-bad` 被打回 2 次（可靠性 0、成功率 0%），但手编的 `quality_score=99`
+仍然保留，因此它仍可能被派到最好的活。这是规格的直译（`manual_locked=true` 时互评不覆盖），
+也是"人来兜底"的意思——但同一个 `mesh profile list` 表里两列并排放着，
+人一眼能看见"99 分 / 0%"。若以后想自动降级，得新增规则，不能偷偷改这一条。
+
+## D21 · `stats` 的自动口径
+
+- `tasks`：每次派发 +1（`spawnWorker`）
+- `approved` / `rejected`：每次 `recordVerdict` 给实现者记一笔
+- `rounds`：一阶打回 +1，mission 二次验收打回再加 1（`noteRound`）
+- `missions`：首次作为某 mission 的参与者时 +1
+- `reliability = round(100 × approved / (approved + rejected))`，没有判决时保持默认 70
+  （不是 0——没干过活不等于不可靠）
+
+所有统计写入都是 best-effort：写 profile 失败只往 stderr 打一行，绝不让裁决流程失败。
+

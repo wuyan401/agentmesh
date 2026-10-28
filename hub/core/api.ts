@@ -13,6 +13,7 @@ import { MeshError, MESH_ERRORS } from './errors.ts'
 import { matchAnyGlob, normRel } from './fsx.ts'
 import { getRoleCard } from '../roles/cards.ts'
 import { canPlan, PLAN_ROLES } from './types.ts'
+import type { PeerScore } from './types.ts'
 import type { ContextLevel } from './context.ts'
 import type { Hub } from './hub.ts'
 import type { Identity } from './identity.ts'
@@ -501,6 +502,61 @@ export class HubApi {
     const id = this.hub.identity.requireLead(sessionId, missionId)
     const result = this.hub.missions.writeReport(id.session.session_id, missionId, markdown)
     return ok({ mission_id: missionId, status: result.mission.status, report_path: result.path, note: 'mission 已完成' })
+  }
+
+  // -- profiles / peer review (V2 §2) --------------------------------------
+
+  /** Read an agent's profile (any hello'd session may look). */
+  get_profile(sessionId: string, agentId: string): ApiResult {
+    this.identity(sessionId)
+    const agent = this.hub.store.requireAgent(agentId)
+    const profile = this.hub.profiles.view(agentId)
+    return ok({
+      ...profile,
+      dimensions: this.hub.profiles.dimensionValues(agentId),
+      success_rate: this.hub.profiles.successRate(agentId),
+      enabled: agent.enabled,
+    })
+  }
+
+  /**
+   * Rate a teammate. The boundaries in §2.4 are enforced by ProfileService: same
+   * mission only, never yourself, one review per (rater, target, mission), and every
+   * score 0-100.
+   */
+  rate_peer(
+    sessionId: string,
+    agentId: string,
+    missionId: string,
+    scores: Partial<PeerScore>,
+    comment?: string,
+    taskId?: string,
+  ): ApiResult {
+    const id = this.identity(sessionId)
+    const result = this.hub.profiles.ratePeer({
+      by_agent: id.agent.agent_id,
+      agent_id: agentId,
+      mission_id: missionId,
+      task_id: taskId ?? id.session.task,
+      scores,
+      comment: comment ?? '',
+    })
+    return ok({
+      agent_id: agentId,
+      by_agent: id.agent.agent_id,
+      mission_id: missionId,
+      quality_before: result.quality_before,
+      quality_after: result.quality_after,
+      applied: result.applied,
+      overwritten: result.overwritten,
+      manual_locked: result.profile.manual_locked,
+      note:
+        result.overwritten
+          ? '同一 mission 的互评已覆盖更新（不会叠加刷分）'
+          : result.applied
+            ? '已按加权移动平均更新 quality_score'
+            : '该 profile 已被人工锁定，只记录互评、不改分数',
+    })
   }
 
   // -- messages ------------------------------------------------------------

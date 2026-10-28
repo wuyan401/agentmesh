@@ -58,8 +58,14 @@ fs.mkdirSync(path.dirname(abs), { recursive: true })
 // Unique per attempt: a rework must produce a new commit, otherwise submit/merge
 // correctly reports "nothing changed".
 const stamp = new Date().toISOString()
-fs.writeFileSync(abs, `// ${taskId}\nexport const built = ${JSON.stringify(stamp)}\n`)
-log(`wrote ${rel}`)
+// MESH_SCRIPTED_MODE=bad makes this worker produce work the supervisor must reject —
+// used by the §2.3 reassignment demo to generate real rejections.
+const bad = process.env.MESH_SCRIPTED_MODE === 'bad'
+const body = bad
+  ? `// ${taskId}\nexport const nope = ${JSON.stringify(stamp)}\n`
+  : `// ${taskId}\nexport const built = ${JSON.stringify(stamp)}\n`
+fs.writeFileSync(abs, body)
+log(`wrote ${rel}${bad ? ' (deliberately incomplete)' : ''}`)
 
 spawnSync('git', ['add', '-A'], { cwd: process.cwd(), encoding: 'utf8' })
 const commit = spawnSync('git', ['commit', '-m', `scripted: ${taskId} at ${stamp}`], {

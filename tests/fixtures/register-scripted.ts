@@ -1,11 +1,17 @@
 /**
- * Register the two scripted agents used by the M1 acceptance walk.
+ * Register the scripted agents used by the M1/M2 acceptance walks.
  *
- * This is scaffolding for `docs/ACCEPTANCE-V2.md`, not platform code: it writes two
+ * This is scaffolding for `docs/ACCEPTANCE-V2.md`, not platform code: it writes
  * ordinary AgentCards through the same validated `saveAgent` path `mesh init` uses.
  * Run inside an initialised project:
  *
  *   node tests/fixtures/register-scripted.ts .
+ *
+ * Four agents, chosen so the scoring rules are observable:
+ *   scripted-01   good worker   (backend/frontend/executor)
+ *   scripted-02   supervisor    (checks the submitted files)
+ *   scripted-03   good worker   (identical to 01 — the scoring tie-break demo)
+ *   scripted-bad  bad worker    (same capabilities, submits work that must be rejected)
  */
 
 import path from 'node:path'
@@ -59,6 +65,19 @@ const supervisor: AgentCard = {
   notes: 'M1 scaffolding: checks the submitted files, then verdicts',
 }
 
+function workerCard(agentId: string, display: string, extraEnv: Record<string, string> = {}): AgentCard {
+  return { ...worker, agent_id: agentId, display_name: display, extra_env: extraEnv }
+}
+
+const workerB = workerCard('scripted-03', 'Scripted worker B (M2 scoring)')
+const badWorker = workerCard('scripted-bad', 'Scripted bad worker (M2 reassignment)', { MESH_SCRIPTED_MODE: 'bad' })
+
 hub.store.saveAgent(worker)
 hub.store.saveAgent(supervisor)
-process.stdout.write(`registered ${worker.agent_id} and ${supervisor.agent_id} in ${hub.paths.root}\n`)
+hub.store.saveAgent(workerB)
+hub.store.saveAgent(badWorker)
+// Every agent gets a profile at init (§2.1); make sure the scripted ones have one too.
+hub.profiles.backfill()
+process.stdout.write(
+  `registered ${[worker, supervisor, workerB, badWorker].map((a) => a.agent_id).join(', ')} in ${hub.paths.root}\n`,
+)

@@ -24,6 +24,7 @@ import { sleepSync, writeJsonAtomic } from '../hub/core/fsx.ts'
 import type { RoleId } from '../hub/core/types.ts'
 import {
   bool,
+  duration,
   list,
   num,
   printJson,
@@ -397,7 +398,7 @@ export function cmdAssign(parsed: ParsedArgs, hub: Hub): number {
   process.stdout.write(`  日志    ${record.log}\n`)
   if (bool(parsed, 'wait')) {
     process.stdout.write(`\n${style.dim('等待进程结束…')}\n`)
-    const deadline = Date.now() + (num(parsed, 'timeout') ?? 900_000)
+    const deadline = Date.now() + (duration(parsed, 'timeout') ?? 900_000)
     while (Date.now() < deadline) {
       const s = hub.store.getSession(record.session_id)
       if (!s || s.status !== 'active' || !s.pid || !isProcessAlive(s.pid)) break
@@ -527,7 +528,7 @@ export async function cmdVerifyAgent(parsed: ParsedArgs, hub: Hub): Promise<numb
       agents: agents.map((a) => a.agent_id),
     })
   }
-  const timeoutMs = num(parsed, 'timeout') ?? 300_000
+  const timeoutMs = duration(parsed, 'timeout') ?? 300_000
   let failures = 0
   for (const agent of targets) {
     if (!agent.capabilities.includes('coordinator') && !agent.capabilities.includes('researcher')) {
@@ -730,7 +731,7 @@ export async function cmdTalk(parsed: ParsedArgs, hub: Hub): Promise<number> {
   process.stdout.write(`${style.dim(`── coordinator turn · ${agentId} · ${session.session_id} ──`)}\n\n`)
   const result = scheduler.runTurn(session.session_id, {
     userMessage: text,
-    timeoutMs: num(parsed, 'timeout') ?? 900_000,
+    timeoutMs: duration(parsed, 'timeout') ?? 900_000,
   })
   const answer = (result.stdout || '').trim()
   if (answer) process.stdout.write(`${answer}\n`)
@@ -771,7 +772,7 @@ export async function cmdCoordinator(parsed: ParsedArgs, hub: Hub): Promise<numb
   })
   const scheduler = new Scheduler(hub)
   const result = scheduler.runTurn(session.session_id, {
-    timeoutMs: num(parsed, 'timeout') ?? 900_000,
+    timeoutMs: duration(parsed, 'timeout') ?? 900_000,
     extraSection: [
       '## 本回合的职责',
       '',

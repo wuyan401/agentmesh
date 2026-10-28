@@ -17,6 +17,7 @@ import type { MissionCard, MissionStatus } from '../hub/core/types.ts'
 import type { PlanTaskInput } from '../hub/core/missions.ts'
 import {
   bool,
+  duration,
   list,
   num,
   printJson,
@@ -239,7 +240,7 @@ async function createAndStart(parsed: ParsedArgs, hub: Hub): Promise<number> {
   const scheduler = new Scheduler(hub)
   process.stdout.write(`\n${style.dim(`── lead turn · ${mission.lead_agent} · ${session.session_id} ──`)}\n\n`)
   const result = scheduler.runTurn(session.session_id, {
-    timeoutMs: num(parsed, 'timeout') ?? 900_000,
+    timeoutMs: duration(parsed, 'timeout') ?? 900_000,
     extraSection: hub.missions.leadBrief(hub.store.requireMission(mission.mission_id), 'planning'),
   })
   const answer = (result.stdout || '').trim()

@@ -22,6 +22,7 @@ import type { MeshConfig } from './config.ts'
 import type { Board } from './board.ts'
 import type { Identity, IdentityService } from './identity.ts'
 import type { MeshStore } from './store.ts'
+import type { ProfileService } from './profiles.ts'
 import type { AgentCard, MissionCard, MissionPlanEntry, RoleId, SessionCard, TaskCard } from './types.ts'
 
 const MISSION_LEAD_ROLE: RoleId = 'lead'
@@ -67,11 +68,18 @@ export class MissionService {
   readonly store: MeshStore
   readonly board: Board
   readonly identity: IdentityService
+  readonly profiles: ProfileService
 
-  constructor(deps: { store: MeshStore; board: Board; identity: IdentityService }) {
+  constructor(deps: {
+    store: MeshStore
+    board: Board
+    identity: IdentityService
+    profiles: ProfileService
+  }) {
     this.store = deps.store
     this.board = deps.board
     this.identity = deps.identity
+    this.profiles = deps.profiles
   }
 
   private config(): MeshConfig {
@@ -245,6 +253,7 @@ export class MissionService {
     if (mission.teammates.includes(agentId)) return
     mission.teammates.push(agentId)
     this.store.saveMission(mission)
+    this.profiles.noteMission(agentId)
   }
 
   // -- lead session --------------------------------------------------------
@@ -479,6 +488,7 @@ export class MissionService {
           })
         }
         this.board.rejectMergedTask(taskId, sessionId, `二次验收打回：${notes}`)
+        if (task.implementer_agent) this.profiles.noteRound(task.implementer_agent)
         rejectedTasks.push(taskId)
       }
     }

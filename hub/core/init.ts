@@ -11,6 +11,7 @@ import path from 'node:path'
 import { Git } from './git.ts'
 import { MeshPaths } from './paths.ts'
 import { MeshStore } from './store.ts'
+import { ProfileService } from './profiles.ts'
 import { nowIso, writeFileAtomic, writeJsonAtomic } from './fsx.ts'
 import { DEFAULT_CONFIG, configFile, loadConfig, saveConfig } from './config.ts'
 import { ROLE_CARDS, renderRoleCard } from '../roles/cards.ts'
@@ -204,6 +205,13 @@ export function initMesh(opts: InitOptions): InitResult {
     const coordinator = detected.agents.find((a) => a.enabled && a.capabilities.includes('coordinator'))
     if (coordinator) saveConfig(paths, { ...config, coordinator_agent: coordinator.agent_id })
   }
+
+  // -- profiles ------------------------------------------------------------
+  // Spec §2.1: every agent that joins gets a multi-dimension profile. Backfill only
+  // fills in the missing ones — an existing profile is never overwritten here.
+  const profiles = new ProfileService(store)
+  const profilesCreated = profiles.backfill()
+  if (profilesCreated > 0) notes.push(`profiles created: ${profilesCreated}`)
 
   return {
     paths,

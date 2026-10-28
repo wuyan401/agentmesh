@@ -98,6 +98,14 @@ export class MeshPaths {
     return this.resolve('logs', `${sessionId}.log`)
   }
 
+  // -- profiles (V2) -------------------------------------------------------
+  get profilesDir(): string {
+    return this.resolve('profiles')
+  }
+  profileFile(agentId: string): string {
+    return this.resolve('profiles', `${agentId}.json`)
+  }
+
   // -- missions (V2) -------------------------------------------------------
   get missionsDir(): string {
     return this.resolve('missions')
@@ -202,6 +210,7 @@ export class MeshPaths {
       this.sessionsDir,
       this.tasksDir,
       this.missionsDir,
+      this.profilesDir,
       this.messagesDir,
       path.join(this.messagesDir, 'inbox'),
       this.deadLetterDir,
