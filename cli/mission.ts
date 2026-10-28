@@ -12,6 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
 import { Scheduler } from '../hub/scheduler/scheduler.ts'
+import { MissionHistory } from '../hub/core/history.ts'
 import type { Hub } from '../hub/core/hub.ts'
 import type { MissionCard, MissionStatus } from '../hub/core/types.ts'
 import type { PlanTaskInput } from '../hub/core/missions.ts'
@@ -72,28 +73,27 @@ function readJsonArg(parsed: ParsedArgs, flag: string): unknown {
 
 export function cmdMissions(parsed: ParsedArgs, hub: Hub): number {
   const status = str(parsed, 'status')
-  const missions = hub.store.listMissions().filter((m) => !status || m.status === status)
+  const rows = hub.missions.listSummaries().filter((m) => !status || m.status === status)
   if (bool(parsed, 'json')) {
-    printJson(missions)
+    printJson(rows)
     return 0
   }
-  if (missions.length === 0) {
+  if (rows.length === 0) {
     process.stdout.write(`${style.dim('还没有 mission。用 `mesh mission "你想做什么"` 开一个。')}\n`)
     return 0
   }
-  const rows = missions.map((m) => {
-    const view = hub.missions.getView(m.mission_id)
-    return [
-      m.mission_id,
-      missionBadge(m.status),
-      m.title.length > 34 ? `${m.title.slice(0, 33)}…` : m.title,
-      m.lead_agent,
-      `${view.progress.merged}/${view.progress.total}`,
-      String(m.rounds),
-      relativeTime(m.updated_at),
-    ]
-  })
-  process.stdout.write(`${table(['Mission', '状态', '标题', 'Lead', '卡', '轮次', '更新'], rows)}\n`)
+  const table_ = rows.map((m) => [
+    m.mission_id,
+    missionBadge(m.status),
+    m.title.length > 34 ? `${m.title.slice(0, 33)}…` : m.title,
+    m.lead_agent,
+    `${m.progress.merged}/${m.progress.total}`,
+    String(m.rounds),
+    MissionHistory.humanDuration(m.duration_ms),
+    m.report_path ? style.green('有') : style.dim('—'),
+  ])
+  process.stdout.write(`${table(['Mission', '状态', '标题', 'Lead', '卡', '轮次', '耗时', '报告'], table_)}\n`)
+  process.stdout.write(`${style.dim(`全局索引：${hub.paths.rel(hub.paths.historyFile)}　详情：mesh mission <id>`)}\n`)
   return 0
 }
 
@@ -101,8 +101,46 @@ export function cmdMission(parsed: ParsedArgs, hub: Hub): number | Promise<numbe
   const first = parsed.positionals[0]
   if (first === 'report') return cmdMissionReport(parsed, hub)
   if (first === 'lead') return cmdMissionLead(parsed, hub)
+  if (first === 'close') return cmdMissionClose(parsed, hub)
+  if (first === 'export') return cmdMissionExport(parsed, hub)
   if (first && MISSION_ID.test(first)) return cmdMissionDetail(parsed, hub, first)
   return createAndStart(parsed, hub)
+}
+
+/**
+ * `mesh mission close <id>` — freeze the mission into its history directory (§4.1).
+ *
+ * `write_report` already does this when a mission completes; the command exists for
+ * missions that ended some other way (cancelled, blocked) and for rebuilding the
+ * directory after a manual edit.
+ */
+export function cmdMissionClose(parsed: ParsedArgs, hub: Hub): number {
+  const missionId = parsed.positionals[1]
+  if (!missionId) throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'usage: mesh mission close <M-000001>')
+  const bundle = hub.history.close(missionId)
+  if (bool(parsed, 'json')) {
+    printJson(bundle)
+    return 0
+  }
+  process.stdout.write(`${style.green('✔')} ${missionId} 归档到 ${bundle.dir}\n`)
+  for (const file of bundle.files) process.stdout.write(`  ${file}\n`)
+  process.stdout.write(`  ${style.dim(`全局索引：${hub.paths.rel(hub.paths.historyFile)}`)}\n`)
+  return 0
+}
+
+/** `mesh mission export <id> [--out path]` — copy the whole bundle somewhere. */
+export function cmdMissionExport(parsed: ParsedArgs, hub: Hub): number {
+  const missionId = parsed.positionals[1]
+  if (!missionId) throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'usage: mesh mission export <M-000001> [--out path]')
+  const out = str(parsed, 'out') ?? path.resolve(`./${missionId}-export`)
+  const result = hub.history.export(missionId, out)
+  if (bool(parsed, 'json')) {
+    printJson(result)
+    return 0
+  }
+  process.stdout.write(`${style.green('✔')} ${missionId} 导出到 ${result.out}（${result.files.length} 个文件）\n`)
+  for (const file of result.files) process.stdout.write(`  ${file}\n`)
+  return 0
 }
 
 function cmdMissionDetail(parsed: ParsedArgs, hub: Hub, missionId: string): number {

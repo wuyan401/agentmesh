@@ -165,6 +165,22 @@ export function startServer(opts: ServerOptions): Promise<{ server: http.Server;
       }
     }
 
+    // -- missions (V2 §4.3) ------------------------------------------------
+    if (p === '/api/missions') {
+      return sendJson(res, 200, {
+        missions: hub.missions.listSummaries(),
+        history: hub.paths.rel(hub.paths.historyFile),
+        history_exists: fs.existsSync(hub.paths.historyFile),
+      })
+    }
+
+    if (p.startsWith('/api/missions/')) {
+      const id = decodeURIComponent(p.slice('/api/missions/'.length))
+      const mission = hub.store.getMission(id)
+      if (!mission) return sendJson(res, 404, { error: 'no such mission', mission_id: id })
+      return sendJson(res, 200, hub.missions.detail(id))
+    }
+
     if (p === '/api/audit') {
       return sendJson(res, 200, {
         violations: hub.store.violations().slice(-200),

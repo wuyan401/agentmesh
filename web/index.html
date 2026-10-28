@@ -24,6 +24,12 @@
     <rect x="2" y="2.4" width="4.6" height="11.2" rx=".6" />
     <rect x="9.4" y="2.4" width="4.6" height="6.6" rx=".6" />
   </symbol>
+  <!-- mission：一层压一层的「活」，下面才是任务卡 -->
+  <symbol id="i-mission" viewBox="0 0 16 16">
+    <path d="M8 1.9 14 5.1 8 8.3 2 5.1z" />
+    <path d="M2 8.1 8 11.3l6-3.2" />
+    <path d="M2 11 8 14.2 14 11" />
+  </symbol>
   <symbol id="i-session" viewBox="0 0 16 16">
     <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1" />
     <path d="M4.2 6.2l2.4 2-2.4 2" />
@@ -75,6 +81,9 @@
     <nav class="nav" aria-label="主导航">
       <a class="nav-link" data-nav="overview" href="#/overview">
         <svg class="ico" aria-hidden="true"><use href="#i-overview" /></svg><span>总览</span>
+      </a>
+      <a class="nav-link" data-nav="missions" href="#/missions">
+        <svg class="ico" aria-hidden="true"><use href="#i-mission" /></svg><span>任务单</span>
       </a>
       <a class="nav-link" data-nav="board" href="#/board">
         <svg class="ico" aria-hidden="true"><use href="#i-board" /></svg><span>看板</span>
@@ -167,6 +176,7 @@
     <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd>跳转会话</dd></div>
     <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd>跳转审计</dd></div>
     <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd>跳转消息</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">r</kbd></dt><dd>跳转任务单（mission）</dd></div>
     <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">o</kbd></dt><dd>跳转总览</dd></div>
     <div><dt><kbd class="kbd">t</kbd></dt><dd>切换分组 / 表格视图</dd></div>
     <div><dt><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></dt><dd>切换详情面板页签</dd></div>

@@ -13,10 +13,13 @@
  */
 
 import path from 'node:path'
+import fs from 'node:fs'
 import { MeshError, MESH_ERRORS } from './errors.ts'
 import { nowIso } from './fsx.ts'
 import { isProcessAlive } from './lock.ts'
 import { applyMissionTransition, canMissionTransition } from './stateMachine.ts'
+import { MissionHistory } from './history.ts'
+import type { TimelineEvent } from './history.ts'
 import { missionOfTask } from './teammates.ts'
 import { loadConfig } from './config.ts'
 import type { MeshConfig } from './config.ts'
@@ -27,6 +30,14 @@ import type { ProfileService } from './profiles.ts'
 import type { AgentCard, MissionCard, MissionPlanEntry, RoleId, SessionCard, TaskCard } from './types.ts'
 
 const MISSION_LEAD_ROLE: RoleId = 'lead'
+
+function fsExists(file: string): boolean {
+  try {
+    return fs.existsSync(file)
+  } catch {
+    return false
+  }
+}
 
 export interface CreateMissionInput {
   title: string
@@ -70,17 +81,20 @@ export class MissionService {
   readonly board: Board
   readonly identity: IdentityService
   readonly profiles: ProfileService
+  readonly history: MissionHistory
 
   constructor(deps: {
     store: MeshStore
     board: Board
     identity: IdentityService
     profiles: ProfileService
+    history?: MissionHistory
   }) {
     this.store = deps.store
     this.board = deps.board
     this.identity = deps.identity
     this.profiles = deps.profiles
+    this.history = deps.history ?? new MissionHistory(deps.store)
   }
 
   private config(): MeshConfig {
@@ -177,6 +191,7 @@ export class MissionService {
       report: null,
       report_at: null,
       rounds: 0,
+      rejected_tasks: [],
       source: input.source ?? (actor ? 'chat' : 'platform'),
       parent_mission: parent?.mission_id ?? null,
       created_at: now,
@@ -374,6 +389,7 @@ export class MissionService {
       applyMissionTransition(fresh, 'planning', { by: sessionId, note: `planned ${created.length} task(s)` })
     } else if (previous === 'rejected') {
       applyMissionTransition(fresh, 'planning', { by: sessionId, note: 'replanned after rejection' })
+      fresh.rejected_tasks = []
     } else {
       fresh.updated_at = nowIso()
       fresh.history.push({
@@ -468,6 +484,10 @@ export class MissionService {
       note: replan ? `二次验收不通过（拆解问题，回到 planning）：${notes}` : `二次验收不通过：${notes}`,
     })
     mission.rounds += 1
+    // Remember *which* cards were named: by the time the scheduler decides
+    // rejected→executing vs rejected→planning, its own auto-requeue may already have
+    // moved those cards back to `ready`, erasing the only card-level signal.
+    mission.rejected_tasks = replan ? [] : [...rejects!]
 
     if (!replan) {
       for (const taskId of rejects!) {
@@ -520,6 +540,14 @@ export class MissionService {
     applyMissionTransition(mission, 'completed', { by: sessionId, note: 'report written' })
     this.store.saveMission(mission)
     this.store.auditEvent('mission.completed', { mission_id: missionId, session_id: sessionId, report: file })
+    // §4.1: `write_report` ends the mission, and ending it freezes the history
+    // directory + refreshes HISTORY.md. Best-effort: a history write must never undo
+    // a completed mission, but it must be visible if it fails.
+    try {
+      this.history.close(missionId)
+    } catch (e) {
+      process.stderr.write(`[mesh] mission history write failed for ${missionId}: ${(e as Error).message}\n`)
+    }
     return { mission: this.store.requireMission(missionId), path: file }
   }
 
@@ -547,17 +575,17 @@ export class MissionService {
       } else if (before === 'rejected') {
         // Rework loop: send rejected cards back to the board and resume execution,
         // or go back to planning when the breakdown itself was the problem.
-        const replan = !mission.tasks.some((id) => this.store.getTask(id)?.status === 'rejected')
+        const replan = (mission.rejected_tasks ?? []).length === 0
         if (replan) {
           to = 'planning'
           note = 'replan required'
         } else {
-          for (const taskId of mission.tasks) {
+          for (const taskId of mission.rejected_tasks ?? []) {
             const task = this.store.getTask(taskId)
             if (task && task.status === 'rejected') this.board.requeueRejectedTask(taskId, 'mission rework')
           }
           to = 'executing'
-          note = 'rework round'
+          note = `rework round: ${mission.rejected_tasks!.join(', ')}`
         }
       } else if (before === 'final_review' && mission.report && mission.report_at) {
         to = 'completed'
@@ -568,6 +596,8 @@ export class MissionService {
       if (!canMissionTransition(before, to)) continue
       const fresh = this.store.requireMission(mission.mission_id)
       applyMissionTransition(fresh, to, { by: 'hub.scheduler', note })
+      // Leaving `rejected` consumes the rejection: no stale card list next time.
+      if (before === 'rejected') fresh.rejected_tasks = []
       this.store.saveMission(fresh)
       this.store.auditEvent('mission.advanced', { mission_id: mission.mission_id, from: before, to, note })
       done.push({ mission_id: mission.mission_id, from: before, to, note })
@@ -624,5 +654,80 @@ export class MissionService {
   /** Absolute path of a mission's report file (for CLI/dashboard). */
   reportPath(missionId: string): string {
     return path.join(this.store.paths.missionDir(missionId), 'report.md')
+  }
+
+  // -- history views (§4) --------------------------------------------------
+
+  /** One row per mission, for `mesh missions` and the dashboard list. */
+  listSummaries(): Array<{
+    mission_id: string
+    title: string
+    status: MissionCard['status']
+    lead_agent: string
+    rounds: number
+    created_at: string
+    updated_at: string
+    duration_ms: number
+    progress: { total: number; merged: number; cancelled: number }
+    teammates: string[]
+    report_path: string | null
+  }> {
+    return this.store
+      .listMissions()
+      .map((mission) => {
+        const view = this.getView(mission.mission_id)
+        const reportPath = this.reportPath(mission.mission_id)
+        return {
+          mission_id: mission.mission_id,
+          title: mission.title,
+          status: mission.status,
+          lead_agent: mission.lead_agent,
+          rounds: mission.rounds,
+          created_at: mission.created_at,
+          updated_at: mission.updated_at,
+          duration_ms: this.history.durationOf(mission),
+          progress: { total: view.progress.total, merged: view.progress.merged, cancelled: view.progress.cancelled },
+          teammates: mission.teammates,
+          report_path: fsExists(reportPath) ? this.store.paths.rel(reportPath) : null,
+        }
+      })
+      .sort((a, b) => b.mission_id.localeCompare(a.mission_id))
+  }
+
+  /**
+   * Everything the detail view needs, assembled once: the card, every task with its
+   * reviews in full, the timeline from the audit ledger, and the report text.
+   */
+  detail(missionId: string): {
+    mission: MissionCard
+    progress: { total: number; merged: number; cancelled: number }
+    tasks: ReturnType<MissionHistory['tasksSnapshot']>
+    timeline: TimelineEvent[]
+    timeline_markdown: string
+    report: string
+    report_path: string | null
+    history_dir: string
+    files: Array<{ name: string; path: string; exists: boolean }>
+  } {
+    const mission = this.store.requireMission(missionId)
+    const view = this.getView(missionId)
+    const timeline = this.history.timelineEvents(mission)
+    const reportPath = this.reportPath(missionId)
+    const dir = this.store.paths.missionDir(missionId)
+    const files = ['report.md', 'timeline.md', 'tasks.json'].map((name) => {
+      const abs = path.join(dir, name)
+      return { name, path: this.store.paths.rel(abs), exists: fsExists(abs) }
+    })
+    return {
+      mission,
+      progress: { total: view.progress.total, merged: view.progress.merged, cancelled: view.progress.cancelled },
+      tasks: this.history.tasksSnapshot(mission),
+      timeline,
+      timeline_markdown: this.history.renderTimeline(mission, timeline),
+      report: mission.report ?? this.store.readMissionReport(missionId) ?? '',
+      report_path: fsExists(reportPath) ? this.store.paths.rel(reportPath) : null,
+      history_dir: this.store.paths.rel(dir),
+      files,
+    }
   }
 }

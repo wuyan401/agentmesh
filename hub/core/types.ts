@@ -305,6 +305,12 @@ export interface MissionCard {
   report_at: string | null
   /** How many times the final review sent the work back. */
   rounds: number
+  /**
+   * Cards the second acceptance named when it said no. Kept on the mission because the
+   * scheduler's auto-requeue may already have moved those cards back to `ready` by the
+   * time the mission's own rejected → executing/planning decision runs.
+   */
+  rejected_tasks: string[]
   /** Where the mission came from. Recorded, never used to filter. */
   source: 'platform' | 'chat'
   parent_mission: string | null

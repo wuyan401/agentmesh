@@ -16,6 +16,7 @@ import { ContextBuilder } from './context.ts'
 import { Board } from './board.ts'
 import { MissionService } from './missions.ts'
 import { ProfileService } from './profiles.ts'
+import { MissionHistory } from './history.ts'
 import { loadConfig } from './config.ts'
 import type { MeshConfig } from './config.ts'
 
@@ -28,6 +29,7 @@ export class Hub {
   readonly audit: Audit
   readonly context: ContextBuilder
   readonly profiles: ProfileService
+  readonly history: MissionHistory
   readonly board: Board
   readonly missions: MissionService
   private readonly configCache: { value: MeshConfig | null }
@@ -41,6 +43,7 @@ export class Hub {
     this.bus = new MessageBus(this.store)
     this.context = new ContextBuilder(this.store)
     this.profiles = new ProfileService(this.store)
+    this.history = new MissionHistory(this.store)
     this.board = new Board({
       store: this.store,
       git: this.git,
@@ -55,6 +58,7 @@ export class Hub {
       board: this.board,
       identity: this.identity,
       profiles: this.profiles,
+      history: this.history,
     })
     this.configCache = { value: null }
   }

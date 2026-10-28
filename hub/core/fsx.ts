@@ -149,6 +149,24 @@ export function listFiles(dir: string, suffix = ''): string[] {
   return out
 }
 
+/**
+ * Only the files directly inside `dir`.
+ *
+ * Matters where a directory holds both cards and per-card bundles: `.mesh/missions/`
+ * has `M-000001.json` next to `M-000001/tasks.json`, and a recursive listing would
+ * treat the bundle's snapshot as a second mission.
+ */
+export function listFilesShallow(dir: string, suffix = ''): string[] {
+  if (!isDir(dir)) return []
+  const out: string[] = []
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) continue
+    if (suffix && !entry.name.endsWith(suffix)) continue
+    out.push(path.join(dir, entry.name))
+  }
+  return out.sort()
+}
+
 // ---------------------------------------------------------------------------
 // Path normalisation and glob matching
 // ---------------------------------------------------------------------------

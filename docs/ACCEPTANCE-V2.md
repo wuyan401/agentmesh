@@ -498,3 +498,154 @@ session log: S-000005.log
 5. **注入文本没做多语言**，全中文；agent 若是英文模型也能读，但没测过。
 6. **上下文包体积**：standard 档 3009 bytes，full 档会更大；prompt 也变长了。
    目前没做 token 预算，只是"够小"。
+
+---
+
+## M4 · 协作史 — ✅
+
+mission 结束时落盘 `.mesh/missions/<id>/{report.md,timeline.md,tasks.json,context/}` +
+`.mesh/HISTORY.md` 全局索引；CLI 四条命令；观察台两个页面（列表 + 详情）。
+
+### 1. 改了哪些文件
+
+**新增**
+
+| 文件 | 行数 | 作用 |
+|---|---|---|
+| `hub/core/history.ts` | 365 | `MissionHistory`：合并两个账本出时间线、tasks 快照、`close()` 落盘、`HISTORY.md` 重建、`export()` |
+| `tests/unit/history.test.ts` | 8 项 | 目录内容、时间线顺序与账本一致、一行一 mission（重复 close 不增行）、导出、空 mission |
+| `tests/m4-missions-ui.py` | 225 | 观察台验收（Playwright，46 条断言，可重跑） |
+| `docs/screenshots/m4-*.png` | 7 张 | 列表 / 详情 / 证据 / 报告 / 看板回归 / 390px 两个 |
+
+**修改**
+
+| 文件 | 改了什么 |
+|---|---|
+| `hub/core/paths.ts` | `historyFile`（`.mesh/HISTORY.md`） |
+| `hub/core/fsx.ts` | `listFilesShallow()`（修 D30 的根因） |
+| `hub/core/store.ts` | `listMissions()` 改用 shallow；新增 `boardEvents()` 读取 board 账本 |
+| `hub/core/missions.ts` | `listSummaries()` / `detail()`（列表与详情视图，CLI 与观察台共用）；`write_report` 后自动 `close()`；`rejected_tasks`（D34） |
+| `hub/core/hub.ts` | `history` 服务接线 |
+| `hub/core/types.ts` · `schema.ts` · `schemas/mission.schema.json` | `MissionCard.rejected_tasks` + 校验 |
+| `hub/web/server.ts` | `GET /api/missions`、`GET /api/missions/<id>` |
+| `cli/mission.ts` | `mesh missions` / `mesh mission <id>` 改用新视图；新增 `mesh mission close`、`mesh mission export` |
+| `web/{index.html,app.js,styles.css}` | 侧栏「任务单」、`#/missions` 与 `#/missions/<id>`、子路径路由（对其它视图无影响） |
+
+### 2. `tsc --noEmit`
+
+```
+$ .\node_modules\.bin\tsc.cmd --noEmit -p tsconfig.json
+(no output — 0 errors, exit 0)
+```
+
+### 3. `node --test`
+
+```
+ℹ tests 116
+ℹ pass 116
+ℹ fail 0
+ℹ duration_ms 173126.4272
+```
+
+**116 = 107（M1–M3）+ 8（history）+ 1（M4 期间新增的 mission 回归）**。
+
+### 4. 真跑证据
+
+**a) 一个真实 mission 跑完后（`mesh mission close M-000001`）**
+
+```
+✔ M-000001 归档到 .mesh/missions/M-000001
+  report.md
+  timeline.md
+  tasks.json
+  context/T-000001.md
+  context/T-000002.md
+  context/T-000003.md
+  全局索引：.mesh/HISTORY.md
+```
+
+`.mesh/HISTORY.md` —— **有且只有一行**：
+
+```
+| # | Mission | 标题 | Lead | 卡 | 轮次 | 耗时 | 状态 | 报告 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | M-000001 | 做一个带登录的博客 | mesh-human | 3/3 | 1 | 1m 03s | completed | [报告](missions/M-000001/report.md) |
+
+共 1 个 mission。
+```
+
+`report.md` 有内容（领写的交付报告）；`tasks.json`：3 张卡全 merged，reviews 各 1/1/2 条，
+`context/` 三份上下文包副本。
+
+**b) timeline 与 audit 对得上**（首 3 条与末 2 条，时间戳逐条吻合）
+
+```
+audit:   18:07:16 mission.created   →  timeline: | 18:07:16 | 创建 mission |
+audit:   18:07:18 mission.lead_session → timeline: | 18:07:18 | 开 lead 会话 |
+audit:   18:07:19 mission.planned   →  timeline: | 18:07:19 | 拆卡 |
+audit:   18:08:25 mission.verdict   →  timeline: | 18:08:25 | 二次验收 |
+audit:   18:08:26 mission.completed →  timeline: | 18:08:26 | 完成 |
+```
+
+（整轮重跑后 53 行，最后一行是「完成」；`归档` 行为 0 —— 见 D29。）
+
+**c) CLI**
+
+```
+$ mesh missions
+M-000001  completed  做一个带登录的博客  mesh-human  3/3  1  1m 09s  有
+
+$ mesh mission export M-000001 --out .mesh-v2-m1\exported
+✔ M-000001 导出到 ...（6 个文件）
+  context/T-000001.md  context/T-000002.md  context/T-000003.md
+  report.md  tasks.json  timeline.md
+```
+
+**d) 观察台**（`mesh serve --dir D:\AI\workspace\dsh\.mesh-v2-m1`）
+
+`GET /api/missions` → `missions=1, M-000001 completed 3/3`；`GET /api/missions/M-000001` →
+`timeline=53, tasks=3, files=[report.md,timeline.md,tasks.json]`。
+
+我独立重跑了子 agent 的验收脚本：**46/46 通过，exit 0**。
+
+```
+"check": "列表：标题在正文", "ok": true
+"check": "列表：进度 3/3", "ok": true
+"check": "列表：轮次", "ok": true
+"check": "列表：时长 humanised（1m 09s）", "ok": true
+"check": "详情：标题在正文", "ok": true
+"check": "详情：至少一条 evidence 出现", "ok": true
+"check": "详情：逐条条款 POST /api/login 返回 200", "ok": true
+"check": "详情：session 被翻成 scripted-02", "ok": true
+"check": "详情：卡片链接到 #/board?task=T-000001", "ok": true
+"check": "看板回归：#/board 仍渲染（.lane）", "ok": true
+"check": "键盘：行可聚焦 + Enter 进详情", "ok": true
+"check": "390px：主栏横向溢出 0", "ok": true
+"check": "no console errors（除了故意触发的 404）", "ok": true
+```
+
+截图见 `docs/screenshots/m4-missions-list.png`、`m4-mission-detail.png`（1440×900）。
+
+### 5. 没做到的（不粉饰）
+
+**按指示未做**：M5（真实 3 agent e2e + `start_mission` 注入）。
+
+**M4 内部的缺口**：
+
+1. **证据在首屏之下**。1440×900 打开详情页，第一屏是封面 + 时间线开头；「每张卡的逐条 evidence」
+   要滚。做了带条数的页内跳转（`02 卡片与证据 · 3 卡 · 6 条款`）补救，**没做** sticky 分节导航。
+2. **`context/` 是按 task 存的，不是按会话**（D31）。一个任务换过三个会话，只有一份包。
+3. **`export` 是复制目录**，没有 zip（零依赖，D32）。
+4. **404 页的「重试」按钮只验证了渲染，没点过**。
+5. **详情页搜索不覆盖证据正文**，只搜卡（id/标题/角色/人/验收）。
+6. **mission 因 cancelled/blocked 结束时不会自动归档**，要手动 `mesh mission close`。
+7. **`tasks.json` 是快照，不是"可回放"的完整事务日志**——它含卡的终态与审查全文，但不含每条消息。
+8. **观察台的 mission 页没有实时刷新**（其它视图有 SSE 计数，但 mission 详情是打开时拉一次）。
+9. **中文术语混用**：CLI 与文档说 "mission"，观察台侧栏叫「任务单」（为了不和顶部的"任务 3"打架）。
+
+### 6. 这一轮顺手修的两个真 bug
+
+- **D30**：`listFiles()` 递归导致历史包里的 `tasks.json` 被当成第二张 mission 卡 →
+  HISTORY.md 出现两行、`advanceMissions` 用快照里的旧状态推进真实 mission。
+- **D34**：M2 的"打回自动回队"把 mission 级打回的信号洗掉 → 针对性返工被当成整件事重拆
+  （状态链 `rejected → planning` 而不是 `rejected → executing`）。观察台把状态链画出来才看见。

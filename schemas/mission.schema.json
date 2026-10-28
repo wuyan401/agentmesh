@@ -54,6 +54,11 @@
     "report": { "type": ["string", "null"], "description": "The lead's final report (markdown)." },
     "report_at": { "type": ["string", "null"], "format": "date-time" },
     "rounds": { "type": "integer", "minimum": 0, "description": "How many times the second acceptance sent the work back." },
+    "rejected_tasks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Cards named by the last rejected second acceptance; cleared when the mission leaves rejected."
+    },
     "source": { "type": "string", "enum": ["platform", "chat"] },
     "parent_mission": { "type": ["string", "null"], "pattern": "^M-[0-9]{6}$" },
     "created_at": { "type": "string", "format": "date-time" },

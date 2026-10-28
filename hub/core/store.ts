@@ -11,7 +11,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { MeshPaths } from './paths.ts'
 import { MeshError, MESH_ERRORS } from './errors.ts'
-import { appendJsonl, ensureDir, exists, listFiles, nowIso, pad, readJson, readJsonIfExists, readJsonl, sha256, writeFileAtomic, writeJsonAtomic } from './fsx.ts'
+import { appendJsonl, ensureDir, exists, listFiles, listFilesShallow, nowIso, pad, readJson, readJsonIfExists, readJsonl, sha256, writeFileAtomic, writeJsonAtomic } from './fsx.ts'
 import { withLock } from './lock.ts'
 import { assertValid } from './schema.ts'
 import type { AgentCard, AgentProfile, Message, MeshState, MissionCard, ReviewRecord, SessionCard, TaskCard, ViolationRecord } from './types.ts'
@@ -137,7 +137,9 @@ export class MeshStore {
 
   listMissions(): MissionCard[] {
     const out: MissionCard[] = []
-    for (const file of listFiles(this.paths.missionsDir, '.json')) {
+    // Shallow on purpose: `.mesh/missions/` holds both `M-000001.json` (the card) and
+    // `M-000001/` (the history bundle, which itself contains a `tasks.json` snapshot).
+    for (const file of listFilesShallow(this.paths.missionsDir, '.json')) {
       const card = readJsonIfExists<MissionCard>(file)
       if (card) out.push(card)
     }
@@ -365,6 +367,11 @@ export class MeshStore {
 
   auditEvents(): Array<Record<string, unknown>> {
     return readJsonl<Record<string, unknown>>(this.paths.auditEvents)
+  }
+
+  /** The board ledger: claim / submit / verdict / merge, one JSON object per line. */
+  boardEvents(): Array<Record<string, unknown>> {
+    return readJsonl<Record<string, unknown>>(this.paths.boardEvents)
   }
 
   appendMerge(record: Record<string, unknown>): void {

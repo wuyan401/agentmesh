@@ -15,11 +15,14 @@ const STATUS_ZH = {
   draft: '草稿', ready: '待领取', claimed: '已认领', in_progress: '进行中',
   submitted: '已提交', reviewing: '审查中', approved: '已通过', merged: '已合并',
   rejected: '已驳回', blocked: '已阻塞', cancelled: '已取消',
+  // mission 状态机（V2）。只用于 tooltip / 副标题，不进 STATUS_ORDER，所以不影响看板与总览。
+  intake: '已接单', planning: '拆解中', executing: '执行中', integrating: '整合中',
+  final_review: '二次验收', completed: '已完成',
 };
-const VIEWS = ['overview', 'board', 'sessions', 'audit', 'messages', 'agents'];
-const VIEW_TITLE = { overview: '总览', board: '看板', sessions: '会话', audit: '审计', messages: '消息', agents: 'Agent' };
+const VIEWS = ['overview', 'missions', 'board', 'sessions', 'audit', 'messages', 'agents'];
+const VIEW_TITLE = { overview: '总览', missions: '任务单', board: '看板', sessions: '会话', audit: '审计', messages: '消息', agents: 'Agent' };
 const SEARCH_PH = {
-  overview: '搜索任务…', board: '搜索 id / 标题 / 角色 / scope / 人…',
+  overview: '搜索任务…', missions: '搜索 mission / 标题 / lead…', board: '搜索 id / 标题 / 角色 / scope / 人…',
   sessions: '搜索会话 / agent / 任务…', audit: '搜索异常 / 合并 / kind…',
   messages: '搜索消息正文 / 类型…', agents: '搜索 agent / 能力…',
 };
@@ -36,6 +39,9 @@ const THEME_KEY = 'agentmesh.theme';
 /* --- 数据层 --------------------------------------------------------------- */
 const store = {
   overview: null, tasks: null, sessions: null, audit: null, messages: null,
+  /** missions: { list: [], history: '.mesh/HISTORY.md', history_exists: bool } | null */
+  missions: null,
+  missionDetail: new Map(),
   tasksById: new Map(), logs: new Map(), docs: new Map(), contexts: new Map(),
   errors: new Map(),
   stream: 'connecting',
@@ -99,7 +105,46 @@ const loaders = {
     store.messages = { messages: r.messages || [], dead: r.dead || [] };
     return store.messages;
   }),
+  missions: () => once('missions', async () => {
+    const r = await api('/api/missions');
+    store.missions = {
+      list: dedupeMissions(r.missions || []),
+      history: r.history || '',
+      history_exists: !!r.history_exists,
+    };
+    return store.missions;
+  }),
 };
+
+/**
+ * `/api/missions` 会返回重复条目：`listFiles()` 是递归的，于是
+ * `.mesh/missions/<id>/tasks.json` 也被当成一张 mission 卡读了出来，同一个
+ * mission_id 出现两次 —— 一份来自 `<id>.json`（teammates 是字符串数组），
+ * 一份来自 `tasks.json`（teammates 是 buildTeammates 的对象数组）。
+ * 接口不改（只读约定），前端按 mission_id 去重，优先留 teammates 干净的那份。
+ */
+function dedupeMissions(list) {
+  const byId = new Map();
+  for (const m of list) {
+    if (!m || !m.mission_id) continue;
+    const clean = Array.isArray(m.teammates) && m.teammates.every((t) => typeof t === 'string');
+    const prev = byId.get(m.mission_id);
+    if (!prev || (clean && !prev.clean)) byId.set(m.mission_id, { card: m, clean });
+  }
+  return Array.from(byId.values())
+    .map((x) => x.card)
+    .sort((a, b) => ts(b.created_at) - ts(a.created_at) || String(b.mission_id).localeCompare(String(a.mission_id)));
+}
+
+function loadMission(id) {
+  if (!id) return Promise.resolve(null);
+  if (store.missionDetail.has(id)) return Promise.resolve(store.missionDetail.get(id));
+  return once(`mission:${id}`, async () => {
+    const d = await api(`/api/missions/${encodeURIComponent(id)}`);
+    store.missionDetail.set(id, d);
+    return d;
+  });
+}
 
 function loadTask(id) {
   if (store.tasksById.has(id)) return Promise.resolve(store.tasksById.get(id));
@@ -165,7 +210,7 @@ function refresh(keys, opts = {}) {
   if (!opts.silent) toast(`重新拉取：${keys.map(friendlyKey).join(' · ')}`);
 }
 function friendlyKey(k) {
-  return { overview: '总览', tasks: '任务', sessions: '会话', audit: '审计', messages: '消息' }[k] || k;
+  return { overview: '总览', tasks: '任务', sessions: '会话', audit: '审计', messages: '消息', missions: 'mission' }[k] || k;
 }
 
 /* --- 格式化 --------------------------------------------------------------- */
@@ -428,13 +473,25 @@ const ui = {
   view: 'board', q: '', status: '', role: '', sort: 'updated_desc', mode: 'lanes',
   task: '', tab: 'verdict', s: '', thread: '', atab: 'violations', doc: 'digest',
   aliveOnly: false, logFor: '',
+  /** mission 子路径：`#/missions/M-000001` 里的 M-000001（只对 missions 视图有意义） */
+  mission: '', mfail: false,
 };
 
+/**
+ * 路由：`#/<view>[/<sub>][?query]`。
+ * 子路径目前只有 missions 用（`#/missions/M-000001`）；其它视图的第二段一律忽略，
+ * 这样 `#/board?task=T-000001&tab=verdict` 这类查询式视图的行为一个字节都没变。
+ */
 function parseHash() {
   const raw = String(location.hash || '').replace(/^#\/?/, '');
-  const [rawView, qs] = raw.split('?');
-  const view = VIEWS.includes(rawView) ? rawView : 'board';
-  return { view, params: new URLSearchParams(qs || '') };
+  const [rawPath, qs] = raw.split('?');
+  const segs = String(rawPath || '').split('/').filter(Boolean);
+  const view = VIEWS.includes(segs[0]) ? segs[0] : 'board';
+  let sub = '';
+  if (view === 'missions' && segs[1]) {
+    try { sub = decodeURIComponent(segs[1]); } catch { sub = segs[1]; }
+  }
+  return { view, sub, params: new URLSearchParams(qs || '') };
 }
 
 function syncUiFromRoute(route) {
@@ -451,12 +508,15 @@ function syncUiFromRoute(route) {
   ui.thread = p.get('thread') || '';
   ui.atab = ['violations', 'merges', 'reviews', 'events'].includes(p.get('atab')) ? p.get('atab') : 'violations';
   ui.doc = ['digest', 'decisions', 'protocol'].includes(p.get('doc')) ? p.get('doc') : 'digest';
+  ui.mission = route.sub || '';
+  ui.mfail = p.get('fail') === '1';
 }
 
 function currentParams() {
   const p = new URLSearchParams();
   const put = (k, v) => { if (v) p.set(k, v); };
   put('q', ui.q.trim());
+  if (ui.view === 'missions') put('fail', ui.mfail ? '1' : '');
   if (ui.view === 'board') {
     put('status', ui.status);
     put('role', ui.role);
@@ -474,8 +534,15 @@ function currentParams() {
   return p.toString();
 }
 
+/** 当前 UI 状态对应的 hash（view + 可选子路径 + 查询串）。 */
+function hashFor() {
+  const sub = ui.view === 'missions' && ui.mission ? `/${encodeURIComponent(ui.mission)}` : '';
+  const qs = currentParams();
+  return `#/${ui.view}${sub}${qs ? `?${qs}` : ''}`;
+}
+
 function setHash(replace = false) {
-  const hash = `#/${ui.view}${currentParams() ? '?' + currentParams() : ''}`;
+  const hash = hashFor();
   if (hash === location.hash) return;
   if (replace) history.replaceState(null, '', hash);
   else location.hash = hash;
@@ -487,7 +554,7 @@ function update(patch, { replace = true, reset = false } = {}) {
   render({ reset });
 }
 function go(view, patch = {}) {
-  const next = { view, ...patch, task: patch.task || '' };
+  const next = { view, ...patch, task: patch.task || '', mission: patch.mission || '' };
   Object.assign(ui, next);
   setHash(false);
   render({ reset: true });
@@ -1498,6 +1565,432 @@ function renderAgents() {
   </table></div>`;
 }
 
+/* --- 视图：任务（mission）------------------------------------------------- */
+/* 两级模型：mission（用户下发的活，有 lead / 验收 / 报告）⊃ 任务卡（卡上有审查与证据）。
+   这两页只回答一个问题：这件事凭什么算做完了。 */
+
+/** 时长：和 CLI 的 humanDuration 同一个口径（1m 06s），不另造一套。 */
+function dur(ms) {
+  const n = Number(ms);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  const total = Math.round(n / 1000);
+  if (total < 1) return `${Math.round(n)}ms`;
+  if (total < 60) return `${total}s`;
+  const m = Math.floor(total / 60);
+  if (m < 60) return `${m}m ${pad2(total % 60)}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${pad2(m % 60)}m`;
+}
+function hms(iso) {
+  const t = ts(iso);
+  if (!t) return '—';
+  const d = new Date(t);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
+function dayKey(iso) {
+  const t = ts(iso);
+  if (!t) return '';
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function dayLabel(iso) {
+  const t = ts(iso);
+  if (!t) return '时间未知';
+  const d = new Date(t);
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} 周${'日一二三四五六'[d.getDay()]}`;
+}
+/** 建单 → 报告（或最后一次状态变化）。detail 里没有 duration_ms，只能自己算。 */
+function missionMs(m) {
+  const a = ts(m && m.created_at);
+  const b = ts(m && (m.report_at || m.updated_at));
+  return a && b ? Math.max(0, b - a) : 0;
+}
+function missionProgress(p) {
+  const x = p || {};
+  const total = Number(x.total) || 0;
+  const merged = Number(x.merged) || 0;
+  const cancelled = Number(x.cancelled) || 0;
+  return { total, merged, cancelled, open: Math.max(0, total - merged - cancelled) };
+}
+/** 进度：一张卡一格（合并实心 / 取消斜纹 / 空槽），沿用轨道那套分段语言。 */
+function progressBar(p, label = true) {
+  if (!p.total) return `<span class="dim2">还没有卡</span>`;
+  const cells = [];
+  for (let i = 0; i < p.merged; i++) cells.push('<i class="done"></i>');
+  for (let i = 0; i < p.cancelled; i++) cells.push('<i class="cancel"></i>');
+  for (let i = 0; i < p.open; i++) cells.push('<i></i>');
+  return `<span class="mbar" aria-hidden="true">${cells.join('')}</span>${
+    label
+      ? `<span>${esc(`${p.merged}/${p.total}`)} 张卡合并${p.cancelled ? ` · ${esc(String(p.cancelled))} 取消` : ''}</span>`
+      : ''}`;
+}
+
+/**
+ * 审查条款：接口实际给的是 `{criterion, pass, evidence}`（见 hub/core/types.ts），
+ * 而接口文档写的是 `{text, ok, evidence}`。两种都认，别让字段名差异吃掉证据。
+ */
+function critOf(c) {
+  if (c == null) return { text: '', ok: null, evidence: '' };
+  if (typeof c === 'string') return { text: c, ok: null, evidence: '' };
+  const rawOk = c.ok !== undefined ? c.ok : c.pass;
+  return {
+    text: String(c.text ?? c.criterion ?? ''),
+    ok: rawOk === true ? true : rawOk === false ? false : null,
+    evidence: String(c.evidence ?? ''),
+  };
+}
+function passWord(ok) { return ok === true ? 'PASS' : ok === false ? 'FAIL' : '未裁决'; }
+
+/** mission 下所有会话的索引：把时间线里的 S-000004 翻成「谁」。 */
+function sessionIndex(d) {
+  const m = new Map();
+  for (const t of (d && d.tasks) || []) {
+    for (const s of t.sessions || []) {
+      if (s && s.session_id) m.set(s.session_id, { agent_id: s.agent_id, role: s.role });
+    }
+  }
+  const mission = d && d.mission;
+  if (mission && mission.lead_session && !m.has(mission.lead_session)) {
+    m.set(mission.lead_session, { agent_id: mission.lead_agent, role: 'lead' });
+  }
+  return m;
+}
+/**
+ * actor 常常只是个 session id。能翻成 agent 就翻（这是数据里本来就有的事实），
+ * 翻不出来就老实显示原值 —— 不猜「大概是谁」。
+ */
+function actorHtml(actor, idx) {
+  const s = String(actor == null ? '' : actor).trim();
+  if (!s) return '<span class="dim2 mono">—</span>';
+  if (s.startsWith('hub.')) return `<span class="mono" title="${attr(s)}">平台 · ${esc(s.slice(4))}</span>`;
+  if (s.startsWith('mesh-hub')) return '<span class="mono" title="mesh-hub">平台 · hub</span>';
+  if (/^S-\d+/.test(s)) {
+    const hit = idx.get(s);
+    if (!hit) return `<span class="mono" title="${attr(s)}">${esc(s)}</span>`;
+    return `<span class="mono" title="${attr(`${s}${hit.role ? ` · ${hit.role}` : ''}`)}">${esc(hit.agent_id || s)}</span>`;
+  }
+  return `<span class="mono">${esc(s)}</span>`;
+}
+
+function renderMissions() {
+  return ui.mission ? renderMissionDetail() : renderMissionList();
+}
+
+function missionHistoryFoot() {
+  const data = store.missions;
+  if (!data || !data.history) return '';
+  return `<p class="mfoot micro">协作史索引 <span class="mono">${esc(data.history)}</span> · ${
+    data.history_exists ? '已生成（一件 mission 一行，按完成顺序）' : '还没生成（第一件 mission 完成后写入）'
+  }</p>`;
+}
+
+/* --- 视图：任务列表 ------------------------------------------------------- */
+function renderMissionList() {
+  const data = store.missions;
+  if (!data) {
+    const err = store.errors.get('missions');
+    return err ? errorBlock('missions', err, '任务单列表') : loadingBlock(4);
+  }
+  const all = data.list;
+  const q = ui.q.trim().toLowerCase();
+  const list = all.filter((m) => !q || [m.mission_id, m.title, m.lead_agent, m.status].join(' ').toLowerCase().includes(q));
+
+  const head = `<div class="view-head">
+    <div class="view-title"><h1>任务单</h1><span class="count">${list.length} / ${all.length} 件事</span></div>
+    <div class="view-tools"><span class="micro">新的在上面 · 一次 mission = 一组任务卡 + 一份报告</span></div>
+  </div>`;
+
+  if (!all.length) {
+    return `${head}${emptyState(
+      '还没有 mission',
+      '平台收到一件活之后（mesh mission start，或 lead 会话里调用 create_mission），这里会出现一条记录：拆了几张卡、谁审的、报告在哪。',
+    )}${missionHistoryFoot()}`;
+  }
+  if (!list.length) {
+    return `${head}${emptyState(
+      '没有匹配的 mission',
+      `关键词「${ui.q.trim()}」把 ${all.length} 件事全过滤掉了。`,
+      '<div class="empty-actions"><button class="btn" type="button" data-act="filter-q">清除关键词</button></div>',
+    )}`;
+  }
+
+  const rows = list.map((m) => {
+    const p = missionProgress(m.progress);
+    const ms = Number.isFinite(Number(m.duration_ms)) ? Number(m.duration_ms) : missionMs(m);
+    return `<li>
+  <a class="mrow st-${esc(m.status)}" href="#/missions/${encodeURIComponent(m.mission_id)}" title="打开 ${attr(m.mission_id)} 的完整证据">
+    <span class="mrow-id">${esc(m.mission_id)}</span>
+    <span class="mrow-pill">${statusPill(m.status)}</span>
+    <span class="mrow-main">
+      <span class="mrow-title">${esc(m.title)}</span>
+      <span class="mrow-sub">
+        <span><span class="k">lead</span> <span class="who">${esc(m.lead_agent || '—')}</span></span>
+        <span><span class="k">轮次</span> ${esc(String(m.rounds ?? 0))}</span>
+        <span title="最后状态变化：${attr(abs(m.updated_at))}"><span class="k">更新</span> ${esc(rel(m.updated_at))}</span>
+      </span>
+    </span>
+    <span class="mrow-facts">
+      <span class="mrow-prog">${progressBar(p)}</span>
+      <span class="mrow-dur" title="建单 → 收尾">${esc(dur(ms))}</span>
+    </span>
+    <svg class="ico mrow-go" aria-hidden="true"><use href="#i-chevron" /></svg>
+  </a>
+</li>`;
+  }).join('');
+
+  return `${head}<div class="mledger"><ul class="mlist" role="list">${rows}</ul></div>${missionHistoryFoot()}`;
+}
+
+/* --- 视图：任务详情 ------------------------------------------------------- */
+function missionTimelineBlock(d, idx) {
+  const list = Array.isArray(d.timeline) ? d.timeline : [];
+  const head = `<div class="sec-head"><h2 class="sec-title"><span class="n">01</span>时间线</h2>
+    <span class="sec-note">${list.length} 条 · 审计账本 + 消息账本</span></div>`;
+  if (!list.length) {
+    return `<section class="msec" id="m-time" tabindex="-1">${head}${emptyState(
+      '没有记录到事件',
+      '这个 mission 的 timeline 是空的：审计账本被清理过，或者它还没跑起来过。空不代表没事发生，只代表没有留痕。',
+    )}</section>`;
+  }
+  let day = '';
+  const items = list.map((e) => {
+    const dk = dayKey(e.at);
+    const sep = dk && dk !== day ? `<div class="tl-day">${esc(dayLabel(e.at))}</div>` : '';
+    day = dk || day;
+    const kind = String(e.kind || '');
+    // 中文标签由后端给（`timeline[].label`，和 timeline.md 用同一张表），前端不再自己维护
+    // 一份翻译 —— 两份表迟早会飘。旧数据/未知 kind 没有 label 时老实显示 kind 本身。
+    const chip = e.label ? String(e.label) : kind;
+    // 后端对某些事件没写描述（describe() 的 default 分支），text 就是事件名本身。
+    // 这时候 chip 已经说清楚了，不用再念一遍英文。
+    const note = e.text && e.text !== kind ? `<div class="tl-note">${esc(e.text)}</div>` : '';
+    const link = e.task_id
+      ? `<div class="tl-by"><a class="linklike mono" href="#/board?task=${encodeURIComponent(e.task_id)}" title="在看板上打开 ${attr(e.task_id)}">${esc(e.task_id)}</a></div>`
+      : '';
+    return `${sep}<div class="tl-item">
+      <div class="tl-time" title="${attr(abs(e.at))}">${esc(hms(e.at))}</div>
+      <div class="tl-main">
+        <div class="tl-move"><span class="chip" title="${attr(kind)}">${esc(chip)}</span><span class="tl-who">${actorHtml(e.actor, idx)}</span></div>
+        ${note}
+        ${link}
+      </div>
+    </div>`;
+  }).join('');
+  return `<section class="msec" id="m-time" tabindex="-1">${head}<div class="timeline">${items}</div></section>`;
+}
+
+function missionAcceptance(accept) {
+  if (!accept.length) return '';
+  return `<div class="maccept">
+    <span class="micro">验收（开单时写的）</span>
+    <ol>${accept.map((a, i) => `<li><span class="n">${pad2(i + 1)}</span><span>${esc(a)}</span></li>`).join('')}</ol>
+  </div>`;
+}
+
+function missionCardHtml(t, onlyFail) {
+  const reviews = Array.isArray(t.reviews_full) ? t.reviews_full : [];
+  const scope = (t.scope && t.scope.write) || [];
+  const merge = t.merge;
+  const sub = t.submission;
+  const reviewers = Array.from(new Set(reviews.map((r) => r.reviewer_agent).filter(Boolean)));
+
+  const meta = [
+    `<span><span class="k">role</span> <span class="v">${esc(t.role || '—')}</span></span>`,
+    `<span><span class="k">impl</span> <span class="v">${esc(t.implementer_agent || '—')}</span></span>`,
+    `<span><span class="k">rev</span> <span class="v">${esc(reviewers.join(',') || '—')}</span></span>`,
+  ];
+  if (scope.length) meta.push(`<span><span class="k">scope</span> <span class="v">${esc(scope.join(', '))}</span></span>`);
+  if (merge) meta.push(`<span><span class="k">merge</span> <span class="v">${esc(shortSha(merge.merge_commit))} · ${esc(merge.mode || '—')}</span></span>`);
+  if (sub && sub.commit) meta.push(`<span><span class="k">commit</span> <span class="v">${esc(shortSha(sub.commit))}</span></span>`);
+  if (t.rejection_count) meta.push(`<span class="tag-broken"><span class="k">打回</span> ${esc(String(t.rejection_count))} 次</span>`);
+
+  const revHtml = reviews.map((r) => {
+    const crits = (r.criteria || []).map(critOf);
+    const shown = onlyFail ? crits.filter((c) => c.ok === false) : crits;
+    if (onlyFail && !shown.length) return '';
+    const ok = String(r.verdict || '') === 'approved';
+    const chain = shown.length
+      ? `<div class="chain">${shown.map((c) => `<div class="chain-item" data-pass="${c.ok === true ? 'true' : c.ok === false ? 'false' : 'null'}">
+          <div class="chain-mark"><span class="glyph" aria-hidden="true">${c.ok === true ? '✓' : c.ok === false ? '✕' : '?'}</span><span class="wire"></span></div>
+          <div class="chain-body">
+            <div class="chain-crit">${esc(c.text || '（条款文字为空）')}</div>
+            <div class="chain-verdict"><span class="verdict">${esc(passWord(c.ok))}</span><span class="mono">${esc(r.review_id || '—')}</span></div>
+            ${evidenceBlock(c.evidence)}
+          </div>
+        </div>`).join('')}</div>`
+      : '<p class="dim2" style="font-size:11.5px">这次审查没有留下逐条 criteria（criteria 为空），只有下面的判词。</p>';
+    return `<div class="mrev">
+      <div class="mrev-head">
+        <span>${esc(r.review_id || '—')}</span>
+        <span class="${ok ? 'ok' : 'no'}">${esc(r.verdict || '—')}</span>
+        <span>审查者 ${esc(r.reviewer_agent || '—')}</span>
+        ${r.reviewer_session ? `<span class="dim2">${esc(r.reviewer_session)}</span>` : ''}
+        ${r.independent ? '<span class="dim2">独立</span>' : ''}
+        <span class="dim2" title="${attr(abs(r.at))}">${esc(mmdd(r.at))}</span>
+        ${r.submission_commit ? `<span class="dim2">commit ${esc(shortSha(r.submission_commit))}</span>` : ''}
+      </div>
+      ${chain}
+      ${r.notes ? `<div class="mrev-notes"><span class="micro">判词</span>${longText(r.notes, 'note-block')}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<article class="mcard st-${esc(t.status)}">
+    <div class="mcard-head">
+      <a class="linklike mono" href="#/board?task=${encodeURIComponent(t.task_id)}" title="在看板上打开 ${attr(t.task_id)}" style="font-size:11px">${esc(t.task_id)}</a>
+      <h3 class="mcard-title">${esc(t.title)}</h3>
+      ${statusPill(t.status)}
+    </div>
+    <div class="mcard-meta">${meta.join('')}</div>
+    ${missionAcceptance(t.acceptance || [])}
+    ${revHtml || '<div class="mrev"><p class="dim">这张卡还没有审查记录（reviews_full 为空）。</p></div>'}
+  </article>`;
+}
+
+function missionCardsBlock(d) {
+  const tasks = Array.isArray(d.tasks) ? d.tasks : [];
+  const q = ui.q.trim().toLowerCase();
+  let critTotal = 0;
+  let critFail = 0;
+  const rows = tasks.map((t) => {
+    let fails = 0;
+    for (const r of t.reviews_full || []) {
+      for (const c of r.criteria || []) {
+        critTotal++;
+        if (critOf(c).ok === false) fails++;
+      }
+    }
+    critFail += fails;
+    return { t, fails };
+  });
+  const shown = rows.filter(({ t, fails }) => {
+    if (ui.mfail && !fails) return false;
+    if (!q) return true;
+    const hay = [
+      t.task_id, t.title, t.role, t.implementer_agent,
+      (t.reviews_full || []).map((r) => r.reviewer_agent || '').join(' '),
+      (t.acceptance || []).join(' '),
+    ].join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+
+  const head = `<div class="sec-head">
+    <h2 class="sec-title"><span class="n">02</span>卡片与证据</h2>
+    <div class="sec-tools">
+      <span class="sec-note">${shown.length} / ${rows.length} 张卡 · ${critTotal} 条条款</span>
+      <div class="seg" role="group" aria-label="按条款结果筛选">
+        <button class="seg-btn" type="button" data-act="mfail" data-on="false" aria-pressed="${ui.mfail ? 'false' : 'true'}">全部 <span class="num">${critTotal}</span></button>
+        <button class="seg-btn" type="button" data-act="mfail" data-on="true" aria-pressed="${ui.mfail ? 'true' : 'false'}">只看未通过 <span class="num">${critFail}</span></button>
+      </div>
+    </div>
+  </div>`;
+
+  if (!tasks.length) {
+    return `<section class="msec" id="m-cards" tabindex="-1">${head}${emptyState(
+      '这个 mission 还没有卡',
+      'lead 用 plan_mission 把活拆成卡之后，这里会按卡列出「要求 → 审查 → 逐条证据」。',
+    )}</section>`;
+  }
+  if (!shown.length) {
+    const back = ui.q.trim()
+      ? '<div class="empty-actions"><button class="btn" type="button" data-act="filter-q">清除关键词</button></div>'
+      : '<div class="empty-actions"><button class="btn" type="button" data-act="mfail" data-on="false">看全部条款</button></div>';
+    return `<section class="msec" id="m-cards" tabindex="-1">${head}${ui.mfail && !critFail
+      ? emptyState('没有未通过的条款', `${critTotal} 条条款全部 PASS —— 没有留下需要复查的缺口。`, back)
+      : emptyState('没有匹配的卡', '关键词把这张 mission 下的卡全过滤掉了。', back)}</section>`;
+  }
+  return `<section class="msec" id="m-cards" tabindex="-1">${head}<div class="mcards">${
+    shown.map(({ t }) => missionCardHtml(t, ui.mfail)).join('')
+  }</div></section>`;
+}
+
+function missionReportBlock(d, m) {
+  const report = String(d.report || '').trim();
+  const path = d.report_path || '';
+  if (!report) {
+    return `<section class="msec" id="m-report" tabindex="-1">
+      <div class="sec-head"><h2 class="sec-title"><span class="n">03</span>交付报告</h2><span class="sec-note">0 字符</span></div>
+      ${emptyState('报告还没写', path
+        ? `报告文件应该在 ${path}，但目前没有内容 —— lead 要用 write_report 写下它。`
+        : '这次 mission 还没有报告：lead 的 write_report 还没跑，或者报告文件被清理了。')}
+    </section>`;
+  }
+  return `<section class="msec" id="m-report" tabindex="-1">
+    <div class="sec-head"><h2 class="sec-title"><span class="n">03</span>交付报告</h2>
+      <span class="sec-note">${m && m.report_at ? `写于 ${esc(mmdd(m.report_at))}` : '交付物'}</span></div>
+    <p class="doc-path">${esc(path || '（无落盘路径）')} · ${esc(String(report.length))} 字符</p>
+    <div class="mreport md">${mdRender(report)}</div>
+  </section>`;
+}
+
+function renderMissionDetail() {
+  const id = ui.mission;
+  const d = store.missionDetail.get(id);
+  const err = store.errors.get(`mission:${id}`);
+  const crumb = `<div class="mcrumb">
+    <a class="mback" href="#/missions"><svg class="ico" aria-hidden="true"><use href="#i-chevron" /></svg>全部任务单</a>
+    <span class="micro mono">${esc(id)}</span>
+  </div>`;
+
+  if (!d) {
+    return `${crumb}${err ? errorBlock(`mission:${id}`, err, `任务单 ${id}`) : loadingBlock(6)}`;
+  }
+
+  const m = d.mission || {};
+  const idx = sessionIndex(d);
+  const p = missionProgress(d.progress);
+  const accept = m.acceptance || [];
+  const files = d.files || [];
+  const mates = m.teammates || [];
+  const cardCount = (d.tasks || []).length;
+  const tlCount = (d.timeline || []).length;
+  let critCount = 0;
+  for (const t of d.tasks || []) for (const r of t.reviews_full || []) critCount += (r.criteria || []).length;
+  const trail = (m.history || []).length > 1
+    ? `<div class="mtrail" aria-label="状态轨迹">${(m.history || []).map((h, i) => `${i ? '<span class="marrow" aria-hidden="true">→</span>' : ''}<span class="mnode st-${esc(h.to)}" title="${attr(`${abs(h.at)} · ${h.by || '—'}${h.note ? ` · ${h.note}` : ''}`)}">${esc(h.to)}<span class="at">${esc(hms(h.at).slice(0, 5))}</span></span>`).join('')}</div>`
+    : '';
+  const brief = String(m.brief || '').trim();
+  // brief 与标题相同时不重复展示：标题本身就是用户原话（这里是常见情况）。
+  const briefBlock = brief && brief !== String(m.title || '').trim()
+    ? `<div class="mbrief"><span class="lbl">用户原话</span>${esc(brief)}</div>`
+    : '';
+
+  const hero = `<section class="mhero st-${esc(m.status)}" aria-labelledby="m-title">
+    <div class="mhero-top">
+      <span class="mhero-id">${esc(m.mission_id || id)}</span>
+      ${statusPill(m.status, 'pill-lg')}
+      ${STATUS_ZH[m.status] ? `<span class="micro">${esc(STATUS_ZH[m.status])}</span>` : ''}
+      ${m.parent_mission ? `<a class="chip" href="#/missions/${encodeURIComponent(m.parent_mission)}">上级 ${esc(m.parent_mission)}</a>` : ''}
+    </div>
+    <h1 id="m-title">${esc(m.title || '（无标题）')}</h1>
+    <div class="mhero-meta">
+      <span><span class="k">lead</span> <span class="v">${esc(m.lead_agent || '—')}</span>${m.lead_session ? `<span class="dim2"> ${esc(m.lead_session)}</span>` : ''}</span>
+      <span><span class="k">轮次</span> <span class="v">${esc(String(m.rounds ?? 0))}</span></span>
+      <span title="建单 → 报告"><span class="k">时长</span> <span class="v">${esc(dur(missionMs(m)))}</span></span>
+      <span title="${attr(abs(m.created_at))}"><span class="k">建单</span> <span class="v">${esc(mmdd(m.created_at))}</span></span>
+      <span title="${attr(abs(m.report_at || m.updated_at))}"><span class="k">收尾</span> <span class="v">${esc(mmdd(m.report_at || m.updated_at))}</span></span>
+      <span title="已合并 / 卡数">${progressBar(p)}</span>
+      ${m.source ? `<span><span class="k">来源</span> <span class="v">${esc(m.source)}</span></span>` : ''}
+      ${mates.length ? `<span><span class="k">参与</span> <span class="v">${esc(mates.join('、'))}</span></span>` : ''}
+    </div>
+    ${briefBlock}
+    ${missionAcceptance(accept)}
+    ${trail}
+    <div class="mfiles">
+      <span class="micro">落盘</span>
+      <span class="mono dim2">${esc(d.history_dir || '—')}</span>
+      ${files.map((f) => `<span class="mfile" data-exists="${f.exists ? 'true' : 'false'}" title="${attr(f.path)}${f.exists ? '' : ' · 文件不存在'}">${esc(f.name)}${f.exists ? '' : '（缺）'}</span>`).join('')}
+    </div>
+  </section>`;
+
+  const nav = `<div class="mnav" role="group" aria-label="页内跳转">
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-time"><span class="n">01</span>时间线<span class="cnt">${tlCount} 条</span></button>
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-cards"><span class="n">02</span>卡片与证据<span class="cnt">${cardCount} 卡 · ${critCount} 条款</span></button>
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-report"><span class="n">03</span>交付报告</button>
+  </div>`;
+
+  return `${crumb}${hero}${nav}${missionTimelineBlock(d, idx)}${missionCardsBlock(d)}${missionReportBlock(d, m)}`;
+}
+
 /* --- 渲染主循环 ----------------------------------------------------------- */
 let lastView = '';
 let lastTab = '';
@@ -1524,19 +2017,23 @@ function render(opts = {}) {
   });
   const qEl = $('#q');
   if (qEl && document.activeElement !== qEl) qEl.value = ui.q;
-  if (qEl) qEl.placeholder = SEARCH_PH[view] || '搜索…';
-  document.title = `${VIEW_TITLE[view]} · AgentMesh 观察台`;
+  if (qEl) qEl.placeholder = view === 'missions' && ui.mission ? '搜索卡 id / 标题 / 角色…' : (SEARCH_PH[view] || '搜索…');
+  const detail = view === 'missions' && ui.mission ? store.missionDetail.get(ui.mission) : null;
+  document.title = detail && detail.mission && detail.mission.title
+    ? `${detail.mission.title} · ${ui.mission} · AgentMesh 观察台`
+    : `${VIEW_TITLE[view]} · AgentMesh 观察台`;
 
   renderStrip();
 
   const host = $('#view');
   if (!host) return;
   const html = view === 'overview' ? renderOverview()
-    : view === 'board' ? renderBoard()
-      : view === 'sessions' ? renderSessions()
-        : view === 'audit' ? renderAudit()
-          : view === 'messages' ? renderMessages()
-            : renderAgents();
+    : view === 'missions' ? renderMissions()
+      : view === 'board' ? renderBoard()
+        : view === 'sessions' ? renderSessions()
+          : view === 'audit' ? renderAudit()
+            : view === 'messages' ? renderMessages()
+              : renderAgents();
 
   const scroller = $('#view-scroll');
   host.innerHTML = html;
@@ -1562,6 +2059,9 @@ function render(opts = {}) {
   if (ui.task && !store.tasksById.has(ui.task) && !store.errors.has(`task:${ui.task}`)) {
     loadTask(ui.task).then(() => renderPanel()).catch(() => renderPanel());
   }
+  if (view === 'missions' && ui.mission && !store.missionDetail.has(ui.mission) && !store.errors.has(`mission:${ui.mission}`)) {
+    loadMission(ui.mission).then(() => { if (ui.view === 'missions' && ui.mission) render({ reset: false }); }).catch(() => { if (ui.view === 'missions') render({ reset: false }); });
+  }
   if (view === 'sessions') {
     const sel = currentSession(null);
     const key = sel ? `log:${sel.session_id}` : '';
@@ -1583,6 +2083,7 @@ async function ensureViewData(view) {
   const need = [];
   const missing = (k) => store[k] == null && !store.errors.get(k);
   if (view === 'overview') { if (missing('overview')) need.push('overview'); }
+  if (view === 'missions') { if (missing('missions')) need.push('missions'); }
   if (view === 'board') { if (missing('overview')) need.push('overview'); if (missing('tasks')) need.push('tasks'); }
   if (view === 'sessions') { if (missing('sessions')) need.push('sessions'); }
   if (view === 'audit') { if (missing('audit')) need.push('audit'); }
@@ -1700,6 +2201,15 @@ function bind() {
     } else if (act === 'clear-filters') {
       update({ status: '', role: '', q: '' }, { reset: false });
       const q = $('#q'); if (q) q.value = '';
+    } else if (act === 'mfail') {
+      update({ mfail: el.dataset.on === 'true' }, { reset: false });
+    } else if (act === 'jump') {
+      const target = el.dataset.to ? document.getElementById(el.dataset.to) : null;
+      if (!target) return;
+      const reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+      target.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+      // 键盘用户需要一个落点：把焦点交给分区本身（tabindex="-1"），但不让它再滚一次。
+      if (target.focus) target.focus({ preventScroll: true });
     } else if (act === 'nav') {
       const patch = {};
       if (el.dataset.atab) patch.atab = el.dataset.atab;
@@ -1721,6 +2231,7 @@ function bind() {
       else if (key.startsWith('log:')) store.logs.delete(key.slice(4));
       else if (key.startsWith('ctx:')) store.contexts.delete(key.slice(4));
       else if (key.startsWith('doc:')) store.docs.delete(key.slice(4));
+      else if (key.startsWith('mission:')) store.missionDetail.delete(key.slice(8));
       else store[key] = null;
       render({ reset: false });
     } else if (act === 'expand') {
@@ -1789,10 +2300,11 @@ function bind() {
   const btnRefresh = $('#btn-refresh');
   if (btnRefresh) {
     btnRefresh.addEventListener('click', () => {
-      refresh(['overview', 'tasks', 'sessions', 'audit', 'messages']);
+      refresh(['overview', 'tasks', 'sessions', 'audit', 'messages', 'missions']);
       store.tasksById.clear();
       store.logs.clear();
       store.docs.delete('digest');
+      store.missionDetail.clear();
       render({ reset: false });
     });
   }
@@ -1847,7 +2359,7 @@ function bind() {
     if (ev.key === '?') { ev.preventDefault(); openHelp(); return; }
     if (ev.key === 'g') { gPending = Date.now(); return; }
     if (gPending && Date.now() - gPending < 1200) {
-      const map = { b: 'board', s: 'sessions', a: 'audit', m: 'messages', o: 'overview', g: 'agents' };
+      const map = { b: 'board', s: 'sessions', a: 'audit', m: 'messages', o: 'overview', g: 'agents', r: 'missions' };
       const dest = map[ev.key];
       if (dest) { ev.preventDefault(); gPending = 0; go(dest); return; }
     }

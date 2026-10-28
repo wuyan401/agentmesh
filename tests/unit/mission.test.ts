@@ -333,6 +333,35 @@ test('mission: a rejected second acceptance sends the named card back and the re
   }
 })
 
+test('mission: a targeted rework survives the scheduler requeueing the card first', () => {
+  const h = missionHarness('mission-rework-vs-replan')
+  try {
+    const missionId = createMission(h)
+    const { tasks } = planAndDispatch(h, missionId)
+    for (let i = 0; i < tasks.length; i++) {
+      mergeCard(h, tasks[i]!, (['backend_dev', 'frontend_dev', 'executor'] as RoleId[])[i]!)
+    }
+    h.hub.missions.advanceMissions()
+    const lead = leadSession(h, missionId)
+
+    const verdict = h.hub.missions.finalVerdict(lead, missionId, false, '测试没覆盖失败路径', [tasks[2]!])
+    assert.deepEqual(verdict.mission.rejected_tasks, [tasks[2]!], 'the named card must be remembered')
+    assert.equal(verdict.mission.status, 'rejected')
+
+    // The scheduler's own retry loop (M2) may requeue rejected cards on the very next
+    // tick — before the mission-level decision runs. That must not turn a targeted
+    // rework into a full replan.
+    h.hub.board.requeueRejectedTask(tasks[2]!, 'reviewer rejection retry')
+    assert.equal(h.hub.store.requireTask(tasks[2]!).status, 'ready')
+
+    const advanced = h.hub.missions.advanceMissions()
+    assert.deepEqual(advanced.map((a) => `${a.from}->${a.to}`), ['rejected->executing'])
+    assert.deepEqual(h.hub.store.requireMission(missionId).rejected_tasks, [], 'leaving rejected clears the list')
+  } finally {
+    h.cleanup()
+  }
+})
+
 test('mission: rejecting without naming a card means the breakdown was wrong → planning', () => {
   const h = missionHarness('mission-replan')
   try {

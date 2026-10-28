@@ -64,6 +64,11 @@ export class MeshPaths {
   get decisionsFile(): string {
     return this.resolve('decisions.md')
   }
+
+  /** Global index of every mission — "the first thing a person opens" (spec §4.1). */
+  get historyFile(): string {
+    return this.resolve('HISTORY.md')
+  }
   get protocolSnapshot(): string {
     return this.resolve('PROTOCOL.snapshot.md')
   }

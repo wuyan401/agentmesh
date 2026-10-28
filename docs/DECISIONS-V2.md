@@ -231,4 +231,84 @@ prompt 里多放一份的理由：agent 未必会打开上下文包文件，但�
 没绑定又不传 → `MESH_SCHEMA_INVALID`，而不是返回空表。空表会被误读成"这次就我一个人"，
 那是错的信息；报错才是对的。
 
+---
+
+# M4 追加
+
+## D27 · `HISTORY.md` 是**重建**的，不是追加的
+
+每次 `close()` 都从 `.mesh/missions/*.json` 重新生成整张表，而不是往文件末尾写一行。
+
+**理由：** 验收要求"有且只有一行"。追加式写法在"重复 close""改完重跑"时会变成两行，
+而重建式写法天然幂等，顺序也稳定（按 mission_id）。代价是大 mission 多时有一次 O(n) 读盘，
+但 n 是"一共做过几件事"的量级，不是性能问题。
+
+## D28 · 时间线读**两个**账本
+
+只读 `audit/events.jsonl` 会缺一半故事：审计账本记的是**权限**（session 建了什么、谁 hello 了），
+`board/events.jsonl` 记的才是**活**（claim / submit / reviewing / approved / merged）。
+M4 把两者合并按时间排序，并对重复的 kind 去重（审计优先）。
+
+`review.attempt` 被刻意丢掉：它和 board 的 `task.reviewing` 是同一件事，
+而后者带的是 agent id（`scripted-02`），前者只有 session id（`S-000004`）——
+表里给人看的应该是"谁"，不是"第几号会话"。
+
+## D29 · `close()` 不写审计事件
+
+一开始我给 `close()` 写了 `mission.closed`，结果每重建一次，时间线里就多一行"归档"——
+而 close 只是把已有账本渲染成文件，**没有改变任何状态**。审计账本应该只记会改变状态的动作。
+这条是重复 close 之后自己看出来的（时间线尾部出现了 5 行"归档"）。
+
+## D30 · `listFiles` 需要一个只列直接子文件的版本（真 bug）
+
+`.mesh/missions/` 里同时有 `M-000001.json`（mission 卡）和 `M-000001/`（历史包，里面有 `tasks.json`）。
+`listFiles` 是**递归**的，于是 `listMissions()` 把历史包里的 `tasks.json` 也当成了一张 mission 卡：
+`HISTORY.md` 出现两行（一行 `0/0`、一行 `3/3`），`advanceMissions` 还会用快照里的旧状态去推进真实 mission
+（时间线里那条莫名其妙的 `planning → executing` 就是它干的）。
+
+修法：新增 `listFilesShallow()`，`listMissions()` 只用它。**这条是跑真数据才发现的**，
+单测当时没抓住，因为我的断言只数了 `| 1 |` 开头的行——现在改成按 mission_id 数，并且直接断言
+`listMissions().length === 1`。
+
+## D31 · `context/` 里放的是"每张卡的上下文包"，不是"每个会话的"
+
+规格写的是"各会话的上下文包副本"。当前上下文包是按 **task** 生成和落盘的
+（`.mesh/context/T-000001.md`），一个 task 换过三个会话也还是那一份（内容会随重新生成更新）。
+所以归档时按 task 复制，并在 `tasks.json` 里保留每个 task 的 session 列表（谁在什么时候干过），
+两件事都在，只是不按会话拆文件——按会话拆会得到三份几乎一样的快照，反而更难读。
+
+## D32 · `export` 是复制目录，不是打 zip
+
+零依赖的约束下没有 zip 库，也就没有"打包"这回事。`mesh mission export <id> --out <dir>`
+把整个历史目录复制出去（`report.md` / `timeline.md` / `tasks.json` / `context/`），
+复制完打印文件清单。要压缩交给用户的 shell。
+
+## D33 · `write_report` 里 close 是 best-effort
+
+`write_report` 完成 mission 后会立刻调用 `history.close()`；如果写盘失败（权限、磁盘满），
+mission 仍然是 completed，只在 stderr 留一行。**理由：** 报告已经落盘、状态已经推进，
+让一次"整理归档"失败去回滚一件已完成的事，是更糟的交换。可以用 `mesh mission close <id>` 重建。
+
+## D34 · mission 卡上的 `rejected_tasks`（M2 的自动回队把信号洗掉了）
+
+二次验收打回时，`finalVerdict` 会把点名的卡片置为 `rejected`。但 M2 加的"打回的卡每 tick 回队"
+会在**同一个 tick 里先**把这些卡改回 `ready`，于是 `advanceMissions` 那句
+"还有没有 status === rejected 的卡"永远为 false —— 一次**针对性返工**（打回某张卡）被当成了
+**整件事重拆**（`rejected → planning`）。
+
+M4 的观察台把状态链画出来后一眼就看见了：`rejected → planning → executing`，
+而预期是 `rejected → executing`。
+
+**修法：** `MissionCard` 增加 `rejected_tasks: string[]`，打回时记下点名的卡，离开 `rejected` 时清空。
+调度器据此判断走 `executing`（针对性返工）还是 `planning`（拆解问题）。判断不再依赖卡片的瞬时状态，
+也就不再依赖 tick 内的执行顺序。
+
+## D35 · 时间线带 `label`
+
+`kind` 是给机器看的（`task.merged`），`label` 是给人看的（`合并`），两者都由后端从同一张
+映射表生成——`timeline.md` 和观察台因此不会各写一套中文。前端优先用 `label`，没有时退回 `kind`，
+所以旧数据不会崩。
+
+
+
 

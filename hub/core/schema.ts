@@ -156,6 +156,9 @@ export function validateMissionCard(card: MissionCard): string[] {
   if (card.report !== null && !isStr(card.report)) e.push('report must be null or a markdown string')
   if (card.report_at !== null && !isIso(card.report_at)) e.push('report_at must be null or an ISO timestamp')
   if (!Number.isInteger(card.rounds) || card.rounds < 0) e.push('rounds must be a non-negative integer')
+  if (card.rejected_tasks !== undefined && !strArray(card.rejected_tasks)) {
+    e.push('rejected_tasks must be a string array')
+  }
   if (card.source !== 'platform' && card.source !== 'chat') e.push('source must be platform|chat')
   if (card.parent_mission !== null && (!isStr(card.parent_mission) || !ID_PATTERNS.mission.test(card.parent_mission))) {
     e.push('parent_mission must be null or M-000001')
