@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/session.schema.json",
+  "title": "SessionCard",
+  "description": "One Agent, one Role, one task. The role is bound at birth and never changes (C6); permissions travel with this card, not with the agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "agent_id",
+    "role",
+    "task",
+    "mode",
+    "lifespan",
+    "spawned_by",
+    "sandbox",
+    "status",
+    "pid",
+    "created_at",
+    "last_heartbeat_at",
+    "ttl_seconds",
+    "hello_at",
+    "turns",
+    "exit"
+  ],
+  "properties": {
+    "session_id": { "type": "string", "pattern": "^S-[0-9]{6}$" },
+    "agent_id": { "type": "string" },
+    "role": { "$ref": "role-id.schema.json" },
+    "task": { "type": ["string", "null"], "pattern": "^T-[0-9]{6}$" },
+    "mode": { "type": "string", "enum": ["platform"], "description": "Only platform sessions are ever registered; D-Sessions stay invisible (C3)." },
+    "lifespan": { "type": "string", "enum": ["ephemeral", "daemon"] },
+    "spawned_by": { "type": "string" },
+    "sandbox": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["starting", "active", "exited", "expired", "killed", "failed"] },
+    "pid": { "type": ["integer", "null"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "last_heartbeat_at": { "type": "string", "format": "date-time" },
+    "ttl_seconds": { "type": "integer", "minimum": 10 },
+    "hello_at": {
+      "type": ["string", "null"],
+      "description": "Null means the session holds no rights at all: every privileged call is refused until hub.hello()."
+    },
+    "resume_token": { "type": ["string", "null"] },
+    "turns": { "type": "integer", "minimum": 0 },
+    "exit": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "at"],
+      "properties": {
+        "code": { "type": ["integer", "null"] },
+        "at": { "type": "string", "format": "date-time" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

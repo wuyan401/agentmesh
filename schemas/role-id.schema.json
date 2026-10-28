@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/role-id.schema.json",
+  "title": "RoleId",
+  "type": "string",
+  "enum": [
+    "coordinator",
+    "planner",
+    "architect",
+    "researcher",
+    "frontend_dev",
+    "backend_dev",
+    "executor",
+    "supervisor",
+    "integrator",
+    "sentinel"
+  ]
+}

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AgentMesh · 观察台</title>
+<meta name="description" content="AgentMesh 只读观察台：任务轨道、会话心跳、审计裁决与消息总线。平台是确定性代码，agent 只是工人。" />
+<meta name="color-scheme" content="dark light" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a0b0d'/%3E%3Crect x='3' y='3' width='4' height='10' fill='%23dfe3e6'/%3E%3Crect x='9' y='3' width='4' height='6' fill='%23dfe3e6'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<a class="skip-link" href="#view-scroll">跳到主内容</a>
+
+<!-- 图标 sprite：内联 SVG，无外链、无 emoji -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-overview" viewBox="0 0 16 16">
+    <path d="M2.2 11.6a6 6 0 0 1 11.6 0" />
+    <path d="M8 11.6 10.6 7.6" />
+    <circle cx="8" cy="11.6" r="1.1" />
+    <path d="M2.2 13.4h11.6" />
+  </symbol>
+  <symbol id="i-board" viewBox="0 0 16 16">
+    <rect x="2" y="2.4" width="4.6" height="11.2" rx=".6" />
+    <rect x="9.4" y="2.4" width="4.6" height="6.6" rx=".6" />
+  </symbol>
+  <symbol id="i-session" viewBox="0 0 16 16">
+    <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1" />
+    <path d="M4.2 6.2l2.4 2-2.4 2" />
+    <path d="M8.6 10.2h3.4" />
+  </symbol>
+  <symbol id="i-audit" viewBox="0 0 16 16">
+    <path d="M8 1.7l4.9 1.9v4.2c0 2.9-2 5.2-4.9 6.1-2.9-.9-4.9-3.2-4.9-6.1V3.6z" />
+    <path d="M5.9 7.9l1.5 1.5 2.9-2.9" />
+  </symbol>
+  <symbol id="i-message" viewBox="0 0 16 16">
+    <path d="M2 3.4h12v7.4H7.4L4.4 13.2v-2.4H2z" />
+    <path d="M4.6 6.2h6.8M4.6 8.4h4.4" />
+  </symbol>
+  <symbol id="i-agent" viewBox="0 0 16 16">
+    <rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1" />
+    <rect x="6.6" y="6.6" width="2.8" height="2.8" rx=".4" />
+    <path d="M6 1.6v2M10 1.6v2M6 12.4v2M10 12.4v2M1.6 6h2M1.6 10h2M12.4 6h2M12.4 10h2" />
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 16 16">
+    <circle cx="7.2" cy="7.2" r="4.2" />
+    <path d="M10.4 10.4L14 14" />
+  </symbol>
+  <symbol id="i-x" viewBox="0 0 16 16">
+    <path d="M4 4l8 8M12 4l-8 8" />
+  </symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16">
+    <path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.7" />
+    <path d="M13.4 2.2v3.2h-3.2" />
+  </symbol>
+  <symbol id="i-chevron" viewBox="0 0 16 16">
+    <path d="M6 3.2L10.8 8 6 12.8" />
+  </symbol>
+  <symbol id="i-doc" viewBox="0 0 16 16">
+    <path d="M3.4 1.8h6l3.2 3.2v9.2H3.4z" />
+    <path d="M9.2 1.8v3.4h3.4" />
+    <path d="M5.4 8h5.2M5.4 10.4h5.2" />
+  </symbol>
+  <symbol id="i-dot" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3.2" /></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg class="brand-mark ico" aria-hidden="true"><use href="#i-board" /></svg>
+      <span class="brand-name">AgentMesh</span>
+      <span class="brand-sub">观察台</span>
+    </div>
+
+    <nav class="nav" aria-label="主导航">
+      <a class="nav-link" data-nav="overview" href="#/overview">
+        <svg class="ico" aria-hidden="true"><use href="#i-overview" /></svg><span>总览</span>
+      </a>
+      <a class="nav-link" data-nav="board" href="#/board">
+        <svg class="ico" aria-hidden="true"><use href="#i-board" /></svg><span>看板</span>
+      </a>
+      <a class="nav-link" data-nav="sessions" href="#/sessions">
+        <svg class="ico" aria-hidden="true"><use href="#i-session" /></svg><span>会话</span>
+      </a>
+      <a class="nav-link" data-nav="audit" href="#/audit">
+        <svg class="ico" aria-hidden="true"><use href="#i-audit" /></svg><span>审计</span>
+      </a>
+      <a class="nav-link" data-nav="messages" href="#/messages">
+        <svg class="ico" aria-hidden="true"><use href="#i-message" /></svg><span>消息</span>
+      </a>
+      <a class="nav-link" data-nav="agents" href="#/agents">
+        <svg class="ico" aria-hidden="true"><use href="#i-agent" /></svg><span>Agent</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="foot-row"><span class="micro">模式</span><span>只读</span></div>
+      <div class="foot-row"><span class="micro">项目</span><span id="foot-project" class="mono">—</span></div>
+      <button class="link-btn" type="button" data-act="help">键盘快捷键 <kbd class="kbd">?</kbd></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-scope">
+        <span class="project" id="tb-project">—</span>
+        <span class="scope-item"><span class="micro">主分支</span> <code id="tb-branch">—</code></span>
+        <span class="scope-item"><span class="micro">基线</span> <code id="tb-base">—</code></span>
+        <span class="scope-item flags" id="tb-flags"></span>
+      </div>
+      <div class="topbar-tools">
+        <div class="search">
+          <svg class="ico" aria-hidden="true"><use href="#i-search" /></svg>
+          <input id="q" type="search" placeholder="搜索任务…" aria-label="搜索当前视图" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd" aria-hidden="true">/</kbd>
+        </div>
+        <button class="icon-btn" type="button" id="btn-refresh" title="重新拉取数据" aria-label="重新拉取数据">
+          <svg class="ico" aria-hidden="true"><use href="#i-refresh" /></svg>
+        </button>
+        <button class="icon-btn" type="button" id="btn-theme" title="切换深浅色" aria-label="切换深浅色">
+          <span class="theme-mark" aria-hidden="true"></span>
+        </button>
+        <div class="live" id="live" data-state="connecting" role="status" aria-live="polite">
+          <span class="live-dot" aria-hidden="true"></span><span class="live-text">连接中</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="strip" id="strip" aria-label="总览条">
+      <div class="strip-inner">
+        <span class="strip-skel" aria-hidden="true"></span>
+        <span class="strip-skel" aria-hidden="true"></span>
+        <span class="strip-skel" aria-hidden="true"></span>
+        <span class="strip-skel" aria-hidden="true"></span>
+      </div>
+    </div>
+
+    <div class="workspace" id="workspace">
+      <main class="view-scroll" id="view-scroll" tabindex="-1">
+        <div class="view" id="view">
+          <div class="loading-block" aria-busy="true" aria-live="polite">
+            <span class="sr-only">加载中</span>
+            <div class="skel skel-line w40"></div>
+            <div class="skel skel-line w80"></div>
+            <div class="skel skel-line w60"></div>
+          </div>
+        </div>
+      </main>
+      <aside class="panel" id="panel" hidden aria-label="任务详情"></aside>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog class="help" id="help" aria-labelledby="help-title">
+  <div class="help-head">
+    <h2 id="help-title">键盘</h2>
+    <button class="icon-btn" type="button" data-act="close-help" aria-label="关闭">
+      <svg class="ico" aria-hidden="true"><use href="#i-x" /></svg>
+    </button>
+  </div>
+  <dl class="help-list">
+    <div><dt><kbd class="kbd">/</kbd></dt><dd>聚焦搜索框</dd></div>
+    <div><dt><kbd class="kbd">Esc</kbd></dt><dd>关闭详情面板 / 退出搜索</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">b</kbd></dt><dd>跳转看板</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">s</kbd></dt><dd>跳转会话</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">a</kbd></dt><dd>跳转审计</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">m</kbd></dt><dd>跳转消息</dd></div>
+    <div><dt><kbd class="kbd">g</kbd> <kbd class="kbd">o</kbd></dt><dd>跳转总览</dd></div>
+    <div><dt><kbd class="kbd">t</kbd></dt><dd>切换分组 / 表格视图</dd></div>
+    <div><dt><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></dt><dd>切换详情面板页签</dd></div>
+    <div><dt><kbd class="kbd">?</kbd></dt><dd>本帮助</dd></div>
+  </dl>
+  <p class="help-note">观察台是只读的：所有写操作走 CLI 与 agent 工具，浏览器里不提供。</p>
+</dialog>
+
+<noscript>
+  <p class="noscript">这个观察台需要 JavaScript 才能渲染 API 数据。</p>
+</noscript>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

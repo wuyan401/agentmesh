@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/role.schema.json",
+  "title": "RoleCard",
+  "description": "A logical function. Roles bind to Sessions, never to Agents. No tool policy exists here, by design (C4).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "title",
+    "duty",
+    "constraints",
+    "can_write_code",
+    "can_implement",
+    "can_review",
+    "can_merge",
+    "lifespan",
+    "output_globs",
+    "prompt"
+  ],
+  "properties": {
+    "role": { "$ref": "role-id.schema.json" },
+    "title": { "type": "string", "minLength": 1 },
+    "duty": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "constraints": { "type": "array", "items": { "type": "string" } },
+    "can_write_code": { "type": "boolean", "description": "May this role deliver code through channel B?" },
+    "can_implement": { "type": "boolean", "description": "May this role call hub.submit() as the implementer?" },
+    "can_review": { "type": "boolean", "description": "May this role issue verdicts?" },
+    "can_merge": { "type": "boolean", "description": "May this role call hub.merge()?" },
+    "lifespan": { "type": "string", "enum": ["ephemeral", "daemon"] },
+    "output_globs": {
+      "type": "array",
+      "description": "Artifact paths this role may write through hub.put_artifact (channel C, non-code). Everything else — including every code path — is refused in code.",
+      "items": { "type": "string" }
+    },
+    "prompt": { "type": "string", "minLength": 20, "description": "The role-card body injected at spawn and again at hub.hello()." }
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/message.schema.json",
+  "title": "Message",
+  "description": "One bus message. Addressing is by role thread, never by agent id (C8): direct peer channels would be a bypass around the audit trail.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "msg_id",
+    "from",
+    "to",
+    "type",
+    "body",
+    "attachments",
+    "thread",
+    "ttl_seconds",
+    "created_at",
+    "expires_at",
+    "resolved",
+    "read_at",
+    "status"
+  ],
+  "properties": {
+    "msg_id": { "type": "string", "pattern": "^M-[0-9]{6}$" },
+    "from": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "session", "role"],
+      "properties": {
+        "agent": { "type": "string" },
+        "session": { "type": "string" },
+        "role": { "$ref": "role-id.schema.json" }
+      }
+    },
+    "to": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "thread"],
+      "properties": {
+        "role": { "$ref": "role-id.schema.json" },
+        "thread": { "type": "string", "description": "Task id, or * for unthreaded" }
+      }
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "task.assign",
+        "task.feedback",
+        "review.verdict",
+        "question.ask",
+        "question.answer",
+        "escalation",
+        "heartbeat",
+        "board.update",
+        "system.notice"
+      ]
+    },
+    "body": { "type": "string", "minLength": 1 },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes", "inline"],
+        "properties": {
+          "path": { "type": "string" },
+          "sha256": { "type": "string" },
+          "bytes": { "type": "integer" },
+          "inline": { "type": "boolean", "description": "Files under 32KB are inlined; larger ones are referenced by sha256." },
+          "text": { "type": "string" }
+        }
+      }
+    },
+    "thread": { "type": "string" },
+    "ttl_seconds": { "type": "integer", "minimum": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "resolved": {
+      "type": ["object", "null"],
+      "description": "Who actually received it. Null means the role was vacant and the message is queued for the next holder.",
+      "additionalProperties": false,
+      "required": ["agent_id", "session_id"],
+      "properties": {
+        "agent_id": { "type": "string" },
+        "session_id": { "type": ["string", "null"] }
+      }
+    },
+    "read_at": { "type": ["string", "null"], "format": "date-time" },
+    "read_by": { "type": ["string", "null"] },
+    "status": { "type": "string", "enum": ["queued", "read", "dead"] }
+  }
+}

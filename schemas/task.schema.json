@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/task.schema.json",
+  "title": "TaskCard",
+  "description": "One unit of work: small enough for a single agent in a single session, with an enforceable write scope and verifiable acceptance criteria.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "title",
+    "role",
+    "status",
+    "depends_on",
+    "scope",
+    "acceptance",
+    "estimate",
+    "branch",
+    "reviews",
+    "history"
+  ],
+  "properties": {
+    "task_id": { "type": "string", "pattern": "^T-[0-9]{6}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "role": { "$ref": "role-id.schema.json" },
+    "created_by": { "type": ["string", "null"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "ready", "claimed", "in_progress", "submitted", "reviewing", "approved", "rejected", "merged", "blocked", "cancelled"]
+    },
+    "depends_on": { "type": "array", "items": { "type": "string", "pattern": "^T-[0-9]{6}$" } },
+    "context_package": { "type": ["string", "null"] },
+    "context_level": { "type": ["string", "null"], "enum": ["minimal", "standard", "full", null] },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["write", "read"],
+      "properties": {
+        "write": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Glob patterns relative to the project root. The merged diff must be a subset of these; anything else is refused at merge time.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "read": {
+          "type": "array",
+          "description": "Advisory only. Reads are never restricted (C4).",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 7,
+      "description": "The only basis for a supervisor verdict. Max 7 items: granularity is a hard rule.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "estimate": {
+      "type": "string",
+      "enum": ["1-session"],
+      "description": "`multi-session` is rejected at creation time by design."
+    },
+    "base_commit": { "type": ["string", "null"] },
+    "branch": { "type": "string", "minLength": 1 },
+    "worktree": { "type": ["string", "null"], "description": "Path of the task sandbox (a self-contained clone)." },
+    "claimed_by": { "type": ["string", "null"], "pattern": "^S-[0-9]{6}$" },
+    "implementer_agent": { "type": ["string", "null"] },
+    "submission": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["commit", "branch", "summary", "submitted_at", "session_id", "files"],
+      "properties": {
+        "commit": { "type": "string" },
+        "branch": { "type": "string" },
+        "summary": { "type": "string" },
+        "submitted_at": { "type": "string", "format": "date-time" },
+        "session_id": { "type": "string" },
+        "files": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "reviews": { "type": "array", "items": { "type": "string" } },
+    "merge": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["commit", "merge_commit", "merged_at", "session_id", "mode", "stripped", "files"],
+      "properties": {
+        "commit": { "type": "string" },
+        "merge_commit": { "type": "string" },
+        "merged_at": { "type": "string", "format": "date-time" },
+        "session_id": { "type": "string" },
+        "mode": { "type": "string", "enum": ["strict", "strip"] },
+        "stripped": { "type": "array", "items": { "type": "string" } },
+        "files": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "blocked_reason": { "type": ["string", "null"] },
+    "parent": { "type": ["string", "null"] },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "from", "to", "by"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "from": { "type": ["string", "null"] },
+          "to": { "type": "string" },
+          "by": { "type": ["string", "null"] },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

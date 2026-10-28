@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/agent.schema.json",
+  "title": "AgentCard",
+  "description": "A physical CLI agent and its launch recipe. Deliberately incapable of expressing tool restrictions (C2/C4): there is no field for it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent_id",
+    "display_name",
+    "kind",
+    "enabled",
+    "command",
+    "args",
+    "capabilities",
+    "concurrency",
+    "cost_tier",
+    "transport",
+    "mcp_inject",
+    "extra_env",
+    "strip_env",
+    "prompt_mode",
+    "prompt_flag",
+    "headless_args",
+    "ttl_seconds",
+    "notes"
+  ],
+  "properties": {
+    "agent_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "kind": {
+      "type": "string",
+      "enum": ["dsh", "hermes", "claude-code", "codex", "opencode", "generic", "file-protocol", "builtin"]
+    },
+    "enabled": { "type": "boolean" },
+    "command": { "type": "string", "description": "Empty only for builtin agents (the deterministic core has no process)." },
+    "args": { "type": "array", "items": { "type": "string" } },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Roles this agent may hold. Manual configuration by design; auto-detection is post-M5.",
+      "items": { "$ref": "role-id.schema.json" }
+    },
+    "concurrency": { "type": "integer", "minimum": 1 },
+    "cost_tier": { "type": "integer", "enum": [1, 2, 3], "description": "1 = cheap/fast, 3 = expensive/thorough. Used for load balancing." },
+    "transport": { "type": "string", "enum": ["mcp", "file", "in-process"] },
+    "mcp_inject": {
+      "type": "string",
+      "enum": ["dsh-patch", "mcp-json", "config-file", "config-file-codex", "hermes-config", "file-protocol", "none"]
+    },
+    "extra_env": { "type": "object", "additionalProperties": { "type": "string" } },
+    "strip_env": {
+      "type": "array",
+      "description": "Env vars removed from the child so it cannot resume/impersonate the spawning session.",
+      "items": { "type": "string" }
+    },
+    "prompt_mode": { "type": "string", "enum": ["arg", "stdin", "file"] },
+    "prompt_flag": { "type": ["string", "null"], "description": "Flag introducing the prompt (-p, -q); null for a positional prompt." },
+    "headless_args": { "type": "array", "items": { "type": "string" } },
+    "ttl_seconds": { "type": "integer", "minimum": 10 },
+    "notes": { "type": "string" }
+  }
+}
