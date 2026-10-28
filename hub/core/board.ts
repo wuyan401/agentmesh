@@ -338,22 +338,40 @@ export class Board {
   /**
    * Create the sandbox if it does not exist yet. Idempotent.
    *
+   * The base commit is decided *here*, not when the card was written: a task can wait
+   * on the board for a long time while its dependencies merge, and a worker must
+   * build on today's main, not on the tree that existed when the card was created.
+   * Getting this wrong gives the worker a stale tree (missing the specs it depends
+   * on) and floods the audit with phantom out-of-scope files at submit time.
+   *
    * If a previous sandbox cannot be removed (a sandboxed agent can leave an
-   * undeletable ACL behind), the platform simply uses the next slot: the sandbox
-   * path is recorded on the card, so the identity of "where this task lived" is
-   * always the card, never a convention.
+   * undeletable ACL behind), the platform uses the next slot: the sandbox path is
+   * recorded on the card, so "where this task lived" is never a convention.
    */
   prepareSandbox(task: TaskCard): string {
-    const base = task.base_commit ?? this.git.headSha() ?? ''
-    if (!base) throw new MeshError(MESH_ERRORS.GIT_FAILED, 'no base commit for sandbox')
+    const head = this.git.headSha() ?? ''
     let lastError: unknown = null
     for (let slot = 1; slot <= 9; slot++) {
       const name = slot === 1 ? task.task_id : `${task.task_id}-${slot}`
       const abs = this.store.paths.resolve('worktrees', name)
+      const existing = this.git.sandboxState(abs) === 'clone'
+      const base = existing ? (task.base_commit ?? head) : head || task.base_commit || ''
+      if (!base) throw new MeshError(MESH_ERRORS.GIT_FAILED, 'no base commit for sandbox')
       try {
         this.git.ensureSandbox(abs, task.branch, base)
         const updated = this.store.requireTask(task.task_id)
         updated.worktree = this.store.paths.rel(abs)
+        if (base !== updated.base_commit) {
+          if (updated.base_commit && !existing) {
+            this.store.auditEvent('sandbox.rebased', {
+              task_id: task.task_id,
+              from: updated.base_commit,
+              to: base,
+              reason: 'dispatched after dependencies merged',
+            })
+          }
+          updated.base_commit = base
+        }
         this.store.saveTask(updated)
         return abs
       } catch (e) {

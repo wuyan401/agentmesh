@@ -1,0 +1,6 @@
+# Normalise line endings: the platform writes files itself (context packages,
+# cards, logs) and compares content, so a stray CRLF would cause noise.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

@@ -194,9 +194,15 @@ export class Git {
 
   ensureSandbox(sandboxAbs: string, branch: string, base: string): string {
     if (this.sandboxState(sandboxAbs) === 'clone') {
-      // Re-attach: make sure it is on the task branch and has the identity.
+      // Re-attach: never reset the branch. `checkout -B <branch>` without a start
+      // point would rewind it to HEAD and could silently discard a previous attempt.
       const current = this.currentBranch(sandboxAbs)
-      if (current !== branch) this.run(['checkout', '--quiet', '-B', branch], { cwd: sandboxAbs, allowFailure: true })
+      if (current !== branch) {
+        const attached = this.run(['checkout', '--quiet', branch], { cwd: sandboxAbs, allowFailure: true })
+        if (attached.code !== 0) {
+          this.run(['checkout', '--quiet', '-B', branch, base], { cwd: sandboxAbs, allowFailure: true })
+        }
+      }
       this.applyIdentity(sandboxAbs)
       return sandboxAbs
     }

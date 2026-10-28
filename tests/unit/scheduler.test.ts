@@ -193,6 +193,50 @@ test('scheduler: auto-integration merges an approved task without an LLM', async
   }
 })
 
+test('scheduler: a waiting task builds on today main, not on the tree it was written on', async () => {
+  const h = createHarness('sched-rebase')
+  try {
+    addAgent(h.hub, 'worker', ['backend_dev'], NOOP_AGENT)
+    addAgent(h.hub, 'other', ['backend_dev', 'supervisor'], NOOP_AGENT)
+    // Card created now...
+    const dep = createReadyTask(h.hub, { title: 'dep', write: ['src/dep.ts'] })
+    const task = h.hub.board.createTask({
+      title: 'dependent',
+      role: 'backend_dev',
+      scope: { write: ['src/late.ts'] },
+      acceptance: ['late'],
+      depends_on: [dep.task_id],
+    })
+    const staleBase = task.base_commit
+    assert.ok(staleBase)
+
+    // ...then main advances before the dependent task is ever dispatched.
+    const dev = newSession(h.hub, 'worker', 'backend_dev')
+    h.hub.board.claimTask(dev.session_id, dep.task_id)
+    const depSandbox = path.resolve(h.dir, h.hub.store.requireTask(dep.task_id).worktree!)
+    fs.mkdirSync(path.join(depSandbox, 'src'), { recursive: true })
+    fs.writeFileSync(path.join(depSandbox, 'src', 'dep.ts'), 'export const dep = 1\n')
+    new Git(h.dir).run(['add', '-A'], { cwd: depSandbox })
+    new Git(h.dir).run(['commit', '-m', 'dep'], { cwd: depSandbox })
+    h.hub.board.submitTask(h.hub.identity.requireIdentity(dev.session_id), dep.task_id, 'dep')
+    const reviewer = newSession(h.hub, 'other', 'supervisor')
+    h.hub.board.recordVerdict(h.hub.identity.requireIdentity(reviewer.session_id), dep.task_id, 'approved', [], 'ok')
+    h.hub.board.mergeTask(dep.task_id, { auto: true })
+    const newMain = h.git.headSha()
+    assert.notEqual(newMain, staleBase)
+
+    // Now the dependent becomes ready and is dispatched.
+    const report = await new Scheduler(h.hub).tick()
+    assert.equal(report.dispatched.length, 1)
+    const bound = h.hub.store.requireTask(task.task_id)
+    assert.equal(bound.base_commit, newMain, 'the sandbox must start from the current main')
+    const sandbox = path.resolve(h.dir, bound.worktree!)
+    assert.ok(fs.existsSync(path.join(sandbox, 'src', 'dep.ts')), 'the worker must see its dependency work')
+  } finally {
+    h.cleanup()
+  }
+})
+
 test('init: re-running init repairs without destroying the board', () => {
   const h = createHarness('init-idem')
   try {
