@@ -98,6 +98,18 @@ export class MeshPaths {
     return this.resolve('logs', `${sessionId}.log`)
   }
 
+  // -- missions (V2) -------------------------------------------------------
+  get missionsDir(): string {
+    return this.resolve('missions')
+  }
+  missionFile(missionId: string): string {
+    return this.resolve('missions', `${missionId}.json`)
+  }
+  /** Per-mission bundle: report.md now, timeline/tasks/context in M4. */
+  missionDir(missionId: string): string {
+    return this.resolve('missions', missionId)
+  }
+
   // -- board ---------------------------------------------------------------
   get tasksDir(): string {
     return this.resolve('board', 'tasks')
@@ -189,6 +201,7 @@ export class MeshPaths {
       this.agentsDir,
       this.sessionsDir,
       this.tasksDir,
+      this.missionsDir,
       this.messagesDir,
       path.join(this.messagesDir, 'inbox'),
       this.deadLetterDir,

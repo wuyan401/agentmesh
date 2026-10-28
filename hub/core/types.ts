@@ -13,7 +13,7 @@
 // Roles
 // ---------------------------------------------------------------------------
 
-/** The ten constitutional roles. Roles are logic; any capable Agent may hold one. */
+/** The constitutional roles. Roles are logic; any capable Agent may hold one. */
 export const ROLE_IDS = [
   'coordinator',
   'planner',
@@ -25,6 +25,8 @@ export const ROLE_IDS = [
   'supervisor',
   'integrator',
   'sentinel',
+  // V2: `lead` is appended, never inserted — snapshots and indices keep their order.
+  'lead',
 ] as const
 
 export type RoleId = (typeof ROLE_IDS)[number]
@@ -52,7 +54,7 @@ export const CODE_ROLES: readonly RoleId[] = ['frontend_dev', 'backend_dev', 'ex
  * is exactly the kind of decision that should live in one auditable place. A worker
  * that could create its own cards would be able to route around the dependency graph.
  */
-export const PLAN_ROLES: readonly RoleId[] = ['coordinator', 'planner', 'architect']
+export const PLAN_ROLES: readonly RoleId[] = ['coordinator', 'planner', 'architect', 'lead']
 
 export function canPlan(role: RoleId): boolean {
   return PLAN_ROLES.includes(role)
@@ -95,7 +97,7 @@ export const TASK_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]
   approved: ['merged', 'rejected', 'blocked', 'cancelled'],
   rejected: ['in_progress', 'ready', 'blocked', 'cancelled'],
   blocked: ['ready', 'in_progress', 'cancelled'],
-  merged: [],
+  merged: ['rejected'],
   cancelled: [],
 }
 
@@ -235,8 +237,80 @@ export interface SessionCard {
   hello_at: string | null
   /** For resumable one-shot daemons (coordinator), the provider-side session id. */
   resume_token: string | null
+  /** V2: the mission this session belongs to (null for V1-style standalone work). */
+  mission: string | null
+  /** V2: true when this session is the lead of its mission (whoever received the job). */
+  is_lead: boolean
   turns: number
   exit: { code: number | null; at: string; note?: string } | null
+}
+
+// ---------------------------------------------------------------------------
+// Mission (V2)
+// ---------------------------------------------------------------------------
+
+/**
+ *   intake ──▶ planning ──▶ executing ──▶ integrating ──▶ final_review ──▶ completed
+ *                  ▲                          ▲              │
+ *                  │                          └──────────────┘  (rejected: 打回改，rounds+1)
+ *                  └──────────────────────────────────────────┘  (replan: 拆解本身有问题)
+ *   any ──▶ blocked / cancelled
+ */
+export const MISSION_STATUSES = [
+  'intake',
+  'planning',
+  'executing',
+  'integrating',
+  'final_review',
+  'completed',
+  'rejected',
+  'blocked',
+  'cancelled',
+] as const
+
+export type MissionStatus = (typeof MISSION_STATUSES)[number]
+
+export interface MissionPlanEntry {
+  task_id: string
+  role: RoleId
+  /** Why the lead handed this piece to that role/agent — for the human reading the plan. */
+  why: string
+}
+
+export interface MissionHistoryEntry {
+  at: string
+  from: MissionStatus | null
+  to: MissionStatus
+  by: string | null
+  note?: string
+}
+
+export interface MissionCard {
+  mission_id: string
+  title: string
+  /** The user's words, verbatim. Never rewritten by the platform. */
+  brief: string
+  /** Mission-level acceptance criteria, may be empty. */
+  acceptance: string[]
+  lead_agent: string
+  lead_session: string | null
+  status: MissionStatus
+  tasks: string[]
+  /** Agents that actually took part, in order of first participation. */
+  teammates: string[]
+  /** The lead's breakdown, for humans. */
+  plan: MissionPlanEntry[]
+  /** Final report written by the lead (markdown), or null. */
+  report: string | null
+  report_at: string | null
+  /** How many times the final review sent the work back. */
+  rounds: number
+  /** Where the mission came from. Recorded, never used to filter. */
+  source: 'platform' | 'chat'
+  parent_mission: string | null
+  created_at: string
+  updated_at: string
+  history: MissionHistoryEntry[]
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +381,8 @@ export interface TaskCard {
   blocked_reason: string | null
   parent: string | null
   tags: string[]
+  /** V2: the lead asked for this specific agent (null = scheduler decides). */
+  preferred_agent: string | null
   history: TaskHistoryEntry[]
 }
 
@@ -420,7 +496,7 @@ export interface MeshState {
   main_branch: string
   /** Commit the mesh was initialised against. Anything older is pre-mesh history. */
   base_commit: string | null
-  counters: { task: number; message: number; session: number; review: number; violation: number }
+  counters: { task: number; message: number; session: number; review: number; violation: number; mission?: number }
   flags: Record<string, boolean | string | number>
 }
 

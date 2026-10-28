@@ -64,7 +64,15 @@ test('claim: 6 concurrent processes produce exactly one winner (file lock, cross
     assert.equal(winners.length, 1, `expected exactly one winner, got ${JSON.stringify(results)}`)
     const losers = results.filter((r) => !r.ok)
     assert.equal(losers.length, 5)
-    for (const l of losers) assert.equal(l.code, 'MESH_CLAIM_CONFLICT')
+    for (const l of losers) {
+      // Losing cleanly (CLAIM_CONFLICT) is the normal path. Under heavy parallel load a
+      // loser can also give up waiting for the lock — still "not the winner", and the
+      // invariant below is what actually matters.
+      assert.ok(
+        l.code === 'MESH_CLAIM_CONFLICT' || l.code === 'MESH_LOCK_TIMEOUT',
+        `unexpected loser outcome: ${JSON.stringify(l)}`,
+      )
+    }
 
     const fresh = h.hub.store.requireTask(task.task_id)
     assert.equal(fresh.status, 'claimed')

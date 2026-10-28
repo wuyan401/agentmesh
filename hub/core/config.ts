@@ -28,6 +28,12 @@ export interface MeshConfig {
   stale_session_seconds: number
   /** Ask the supervisor to run project commands (tests/build) during review. */
   review_runs_checks: boolean
+  /** V2: preferred lead agent for new missions (null = cheapest capable). */
+  mission_lead_agent: string | null
+  /** V2: nested mission depth limit (0 = unlimited; 3 keeps recursion bounded). */
+  mission_max_depth: number
+  /** V2: after this many rejections of the same card, reassign to a different agent. */
+  reassign_after_rejections: number
 }
 
 export const DEFAULT_CONFIG: MeshConfig = {
@@ -35,11 +41,15 @@ export const DEFAULT_CONFIG: MeshConfig = {
   coordinator_agent: null,
   auto_integrate: true,
   auto_review: true,
-  max_concurrent_sessions: 4,
+  // V2 §6: no artificial limits by default. 16 is "enough", not a narrative limit.
+  max_concurrent_sessions: 16,
   dispatch_interval_ms: 3000,
   context_level: 'standard',
   stale_session_seconds: 1800,
   review_runs_checks: true,
+  mission_lead_agent: null,
+  mission_max_depth: 3,
+  reassign_after_rejections: 2,
 }
 
 export function configFile(paths: MeshPaths): string {

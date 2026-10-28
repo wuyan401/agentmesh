@@ -50,7 +50,7 @@ export function humanIdentity(hub: Hub, role: RoleId): { identity: ReturnType<Hu
       enabled: true,
       command: '',
       args: [],
-      capabilities: ['coordinator', 'supervisor', 'integrator', 'planner', 'architect'],
+      capabilities: ['coordinator', 'supervisor', 'integrator', 'planner', 'architect', 'lead'],
       concurrency: 1,
       cost_tier: 1,
       transport: 'in-process',
@@ -145,6 +145,16 @@ export function cmdStatus(parsed: ParsedArgs, hub: Hub): number {
   process.stdout.write(
     `${style.bold('配置')}  auto_integrate=${config.auto_integrate ? 'on' : 'off'}  auto_review=${config.auto_review ? 'on' : 'off'}  coordinator=${config.coordinator_agent ?? '-'}\n`,
   )
+  const openMissions = hub.store.listMissions().filter((m) => !['completed', 'cancelled'].includes(m.status))
+  if (openMissions.length > 0) {
+    process.stdout.write(`\n${style.bold('Mission')}\n`)
+    for (const m of openMissions.slice(-5)) {
+      const view = hub.missions.getView(m.mission_id)
+      process.stdout.write(
+        `  ${m.mission_id} ${statusBadge(m.status)} ${m.title.slice(0, 36)}  ${view.progress.merged}/${view.progress.total}  lead ${m.lead_agent}\n`,
+      )
+    }
+  }
   if (violations.length > 0) {
     const recent = violations.slice(-3)
     process.stdout.write(`\n${style.yellow(`⚠ ${violations.length} 条审计记录`)}\n`)

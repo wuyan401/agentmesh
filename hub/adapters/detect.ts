@@ -113,6 +113,7 @@ const ALL_ROLES: RoleId[] = [
   'supervisor',
   'integrator',
   'sentinel',
+  'lead',
 ]
 
 function dshCard(command: string, bin: string, displayName: string, capabilities: RoleId[]): AgentCard {
@@ -147,7 +148,7 @@ function hermesCard(command: string): AgentCard {
     enabled: true,
     command,
     args: [],
-    capabilities: ['planner', 'researcher', 'frontend_dev', 'backend_dev', 'executor', 'supervisor', 'sentinel'],
+    capabilities: ['planner', 'researcher', 'frontend_dev', 'backend_dev', 'executor', 'supervisor', 'sentinel', 'lead'],
     // One at a time: Hermes shares a profile with whatever else is installed on the
     // machine, and parallel one-shot runs contend on it.
     concurrency: 1,
@@ -211,9 +212,9 @@ export function detectAgents(ctx: DetectContext): DetectedAgent[] {
 
   // Uninstalled families still get a card template so registration is one command.
   const optional: Array<{ id: string; cmd: string; display: string; kind: AgentCard['kind']; roles: RoleId[]; inject: AgentCard['mcp_inject'] }> = [
-    { id: 'claude-code-01', cmd: 'claude', display: 'Claude Code', kind: 'claude-code', roles: ['frontend_dev', 'backend_dev', 'supervisor', 'planner', 'architect'], inject: 'mcp-json' },
-    { id: 'codex-01', cmd: 'codex', display: 'Codex', kind: 'codex', roles: ['frontend_dev', 'backend_dev', 'executor', 'supervisor'], inject: 'config-file-codex' },
-    { id: 'opencode-01', cmd: 'opencode', display: 'OpenCode', kind: 'opencode', roles: ['frontend_dev', 'backend_dev', 'executor'], inject: 'config-file' },
+    { id: 'claude-code-01', cmd: 'claude', display: 'Claude Code', kind: 'claude-code', roles: ['frontend_dev', 'backend_dev', 'supervisor', 'planner', 'architect', 'lead'], inject: 'mcp-json' },
+    { id: 'codex-01', cmd: 'codex', display: 'Codex', kind: 'codex', roles: ['frontend_dev', 'backend_dev', 'executor', 'supervisor', 'lead'], inject: 'config-file-codex' },
+    { id: 'opencode-01', cmd: 'opencode', display: 'OpenCode', kind: 'opencode', roles: ['frontend_dev', 'backend_dev', 'executor', 'lead'], inject: 'config-file' },
   ]
   for (const opt of optional) {
     const found = which(opt.cmd)

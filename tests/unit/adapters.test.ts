@@ -69,6 +69,9 @@ test('adapter dsh: the spawned child never inherits the spawning session identit
     process.env['DSH_SESSION_ID'] = 'session-that-must-not-leak'
     process.env['DSH_PROFILE'] = 'desktop'
     process.env['MESH_SESSION_ID'] = 'stale-value'
+    // Mock the credentials home instead of depending on what this machine has:
+    // "credentials survive the spawn" is the contract, the real path is not.
+    process.env['DSH_HOME'] = 'C:\\mock-dsh-home'
     const env = buildChildEnv(ctx)
     assert.equal(env['DSH_SESSION_ID'], undefined, 'a child must not think it is the parent session')
     assert.equal(env['DSH_PROFILE'], undefined)
@@ -76,7 +79,7 @@ test('adapter dsh: the spawned child never inherits the spawning session identit
     assert.equal(env['MESH_ROOT'], h.hub.paths.root)
     assert.equal(env['MESH_AGENT_ID'], 'dsh-01')
     assert.ok(env['PATH']?.includes(process.execPath.replace(/[\\/][^\\/]+$/, '')))
-    assert.ok(env['DSH_HOME'], 'credentials home must survive')
+    assert.equal(env['DSH_HOME'], 'C:\\mock-dsh-home', 'credentials home must survive the spawn verbatim')
   } finally {
     process.env = saved
     h.cleanup()

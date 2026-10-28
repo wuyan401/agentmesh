@@ -13,6 +13,7 @@
     "executor",
     "supervisor",
     "integrator",
-    "sentinel"
+    "sentinel",
+    "lead"
   ]
 }

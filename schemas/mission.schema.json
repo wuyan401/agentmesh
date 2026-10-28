@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentmesh.dev/schemas/mission.schema.json",
+  "title": "MissionCard",
+  "description": "One thing the user asked for: a lead, a breakdown into task cards, a second acceptance, a report. The lead is a mission property, not a global role.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "mission_id",
+    "title",
+    "brief",
+    "acceptance",
+    "lead_agent",
+    "lead_session",
+    "status",
+    "tasks",
+    "teammates",
+    "plan",
+    "report",
+    "report_at",
+    "rounds",
+    "source",
+    "parent_mission",
+    "created_at",
+    "updated_at",
+    "history"
+  ],
+  "properties": {
+    "mission_id": { "type": "string", "pattern": "^M-[0-9]{6}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "brief": { "type": "string", "description": "The user's words, verbatim." },
+    "acceptance": { "type": "array", "items": { "type": "string" } },
+    "lead_agent": { "type": "string", "minLength": 1 },
+    "lead_session": { "type": ["string", "null"], "pattern": "^S-[0-9]{6}$" },
+    "status": {
+      "type": "string",
+      "enum": ["intake", "planning", "executing", "integrating", "final_review", "completed", "rejected", "blocked", "cancelled"]
+    },
+    "tasks": { "type": "array", "items": { "type": "string", "pattern": "^T-[0-9]{6}$" } },
+    "teammates": { "type": "array", "items": { "type": "string" }, "description": "Agents that actually took part, in order of first participation." },
+    "plan": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "role", "why"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "role": { "$ref": "role-id.schema.json" },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "report": { "type": ["string", "null"], "description": "The lead's final report (markdown)." },
+    "report_at": { "type": ["string", "null"], "format": "date-time" },
+    "rounds": { "type": "integer", "minimum": 0, "description": "How many times the second acceptance sent the work back." },
+    "source": { "type": "string", "enum": ["platform", "chat"] },
+    "parent_mission": { "type": ["string", "null"], "pattern": "^M-[0-9]{6}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "from", "to", "by"],
+        "properties": {
+          "at": { "type": "string", "format": "date-time" },
+          "from": { "type": ["string", "null"] },
+          "to": { "type": "string" },
+          "by": { "type": ["string", "null"] },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

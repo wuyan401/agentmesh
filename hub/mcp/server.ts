@@ -247,6 +247,74 @@ const TOOLS: ToolDef[] = [
     handler: (api, session, args) => api.publish_task(session, arg(args, 'task_id')),
   },
   {
+    name: 'create_mission',
+    description:
+      'Create a mission (one thing the user asked for) and pick its lead. Whoever receives the job leads it. Only planning roles, the mission lead (nested missions) or the human operator may call this.',
+    inputSchema: obj({
+      title: str('one-line title'),
+      brief: str("the user's words, verbatim — the platform never rewrites them"),
+      acceptance: { type: 'array', items: { type: 'string' }, description: 'mission-level acceptance criteria (optional)' },
+      lead_agent: str('agent id to lead it; omit to let the platform pick'),
+      parent_mission: str('parent mission id when this is a nested sub-mission'),
+    }, ['title', 'brief']),
+    handler: (api, session, args) =>
+      api.create_mission(session, {
+        title: arg(args, 'title'),
+        brief: arg(args, 'brief'),
+        acceptance: Array.isArray(args['acceptance']) ? (args['acceptance'] as string[]) : [],
+        lead_agent: optStr(args, 'lead_agent') ?? null,
+        parent_mission: optStr(args, 'parent_mission') ?? null,
+      }),
+  },
+  {
+    name: 'get_mission',
+    description: 'Read a mission: status, plan, per-task progress with reviewer/merge, and whether the lead is live.',
+    inputSchema: obj({ mission_id: str('mission id, e.g. M-000001') }, ['mission_id']),
+    handler: (api, session, args) => api.get_mission(session, arg(args, 'mission_id')),
+  },
+  {
+    name: 'plan_mission',
+    description:
+      'Lead only: split the mission into task cards in one atomic call. Each item: {title, role, scope:{write,read}, acceptance, depends_on?, agent?, why?}. Omitting depends_on serializes the items in array order. At most 7 acceptance criteria per card.',
+    inputSchema: obj({
+      mission_id: str('mission id'),
+      tasks: { type: 'array', items: { type: 'object' }, description: 'the breakdown' },
+    }, ['mission_id', 'tasks']),
+    handler: (api, session, args) => api.plan_mission(session, arg(args, 'mission_id'), args['tasks']),
+  },
+  {
+    name: 'dispatch_mission',
+    description: 'Lead only: hand the plan to the scheduler (planning → executing). Cards become claimable here.',
+    inputSchema: obj({ mission_id: str('mission id') }, ['mission_id']),
+    handler: (api, session, args) => api.dispatch_mission(session, arg(args, 'mission_id')),
+  },
+  {
+    name: 'final_verdict',
+    description:
+      'Lead only: the second acceptance for the whole mission. approved=false sends the named cards back to work (rejects=[] means the breakdown itself was wrong and the mission returns to planning).',
+    inputSchema: obj({
+      mission_id: str('mission id'),
+      approved: bool('true = the work meets the mission, continue to the report'),
+      notes: str('why — this is what the humans read'),
+      rejects: { type: 'array', items: { type: 'string' }, description: 'task ids to send back (omit to replan)' },
+    }, ['mission_id', 'approved', 'notes']),
+    handler: (api, session, args) =>
+      api.final_verdict(
+        session,
+        arg(args, 'mission_id'),
+        args['approved'] === true,
+        arg(args, 'notes'),
+        Array.isArray(args['rejects']) ? (args['rejects'] as string[]) : undefined,
+      ),
+  },
+  {
+    name: 'write_report',
+    description:
+      'Lead only: write the final report for the user (markdown). Requires an approved second acceptance; writing it completes the mission.',
+    inputSchema: obj({ mission_id: str('mission id'), markdown: str('the report') }, ['mission_id', 'markdown']),
+    handler: (api, session, args) => api.write_report(session, arg(args, 'mission_id'), arg(args, 'markdown')),
+  },
+  {
     name: 'send',
     description:
       'Send a message to a role thread. Addressing is by role (never by agent id): the hub resolves the current holder and queues the message if the role is vacant.',

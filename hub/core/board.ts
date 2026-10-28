@@ -35,6 +35,8 @@ export interface CreateTaskInput {
   tags?: string[]
   publish?: boolean
   created_by?: string | null
+  /** V2: the lead may ask for a specific agent. Null lets the scheduler decide. */
+  preferred_agent?: string | null
 }
 
 export interface BoardFilter {
@@ -152,6 +154,7 @@ export class Board {
       blocked_reason: null,
       parent: input.parent ?? null,
       tags: input.tags ?? [],
+      preferred_agent: input.preferred_agent ?? null,
       history: [],
     }
     if (!roleCard.can_implement && !roleCard.can_review && !roleCard.can_merge) {
@@ -603,9 +606,18 @@ export class Board {
 
   // -- merge ---------------------------------------------------------------
 
+  /**
+   * The approval that counts is the one for the *current* submission.
+   *
+   * V2 adds a rework loop (second acceptance can send a merged card back), and without
+   * this check the old approval would still authorise merging the new code — a hole in
+   * C1. Reviews carry `submission_commit`, so the match is exact.
+   */
   approvedReview(task: TaskCard): ReviewRecord | null {
-    const reviews = this.store.listReviews(task.task_id)
-    const approved = reviews.filter((r) => r.verdict === 'approved')
+    const current = task.submission?.commit ?? ''
+    const approved = this.store
+      .listReviews(task.task_id)
+      .filter((r) => r.verdict === 'approved' && (current === '' || r.submission_commit === current))
     return approved.length > 0 ? (approved[approved.length - 1] ?? null) : null
   }
 
@@ -784,6 +796,8 @@ export class Board {
         ttl_seconds: 3600,
         hello_at: nowIso(),
         resume_token: null,
+        mission: null,
+        is_lead: false,
         turns: 0,
         exit: null,
       },
@@ -807,6 +821,43 @@ export class Board {
       this.store.auditEvent('task.blocked', { task_id: taskId, by, reason })
       return task
     })
+  }
+
+  /** V2: the lead's second acceptance can send a *merged* card back for rework. */
+  rejectMergedTask(taskId: string, by: string, note: string): TaskCard {
+    return withLock(this.store.paths.lockFile(`task-${taskId}`), () => {
+      const task = this.store.requireTask(taskId)
+      if (task.status !== 'merged') {
+        throw new MeshError(MESH_ERRORS.TRANSITION_ILLEGAL, `only a merged task can be sent back (status is ${task.status})`, {
+          task_id: taskId,
+          status: task.status,
+        })
+      }
+      applyTransition(task, 'rejected', { by, note })
+      this.store.saveTask(task)
+      this.store.boardEvent({ event: 'task.rejected_after_merge', task_id: taskId, by, note })
+      this.store.auditEvent('task.rejected_after_merge', { task_id: taskId, by, note })
+      return task
+    })
+  }
+
+  /** V2: put a rejected card back on the board so it can be worked on again. */
+  requeueRejectedTask(taskId: string, note: string): TaskCard | null {
+    return withLock(this.store.paths.lockFile(`task-${taskId}`), () => {
+      const task = this.store.requireTask(taskId)
+      if (task.status !== 'rejected') return null
+      applyTransition(task, 'ready', { by: 'hub.scheduler', note })
+      // Keep implementer_agent for the audit trail, but free the claim so the
+      // scheduler (or the lead's preferred_agent) can place it again.
+      task.claimed_by = null
+      this.store.saveTask(task)
+      this.store.boardEvent({ event: 'task.requeued', task_id: taskId, note })
+      return task
+    })
+  }
+
+  blockedReasonOf(taskId: string): string | null {
+    return this.store.getTask(taskId)?.blocked_reason ?? null
   }
 
   unblockTask(taskId: string, by: string, note?: string): TaskCard {

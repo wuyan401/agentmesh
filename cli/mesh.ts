@@ -43,12 +43,39 @@ import {
   cmdVerifyAgent,
 } from './human.ts'
 import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
+import {
+  cmdCreateMission,
+  cmdDispatchMission,
+  cmdFinalVerdict,
+  cmdGetMission,
+  cmdMission,
+  cmdMissionLead,
+  cmdMissions,
+  cmdPlanMission,
+  cmdWriteReport,
+} from './mission.ts'
 import { createRequire } from 'node:module'
 
 const require_ = createRequire(import.meta.url)
 const VERSION = (require_('../package.json') as { version: string }).version
 
 const HELP = `${style.bold('AgentMesh')} ${style.dim(`v${VERSION}`)} — 让异构 CLI Agent 像团队一样协作
+
+${style.bold('Mission（V2）')}
+  mesh mission "你想做什么" [--lead id] [--accept "…"] [--dry-plan]
+                                         开一个 mission，选 lead 并让它拆解
+  mesh missions [--status completed]      mission 列表
+  mesh mission <M-000001>                 mission 详情：计划、卡状态、审查、报告
+  mesh mission report <M-000001>          打印最终报告
+  mesh mission lead <M-000001>            为内置 lead（人类）开一个 lead 会话
+
+${style.bold('Mission 的 lead 动作')}（都需要 --session 或 MESH_SESSION_ID，且必须是在任 lead）
+  mesh plan-mission <M-000001> --file plan.json
+  mesh dispatch-mission <M-000001>
+  mesh final-verdict <M-000001> --approve|--reject --notes "…" [--reject-task T-000012]
+  mesh write-report <M-000001> --file report.md
+  mesh create-mission "标题" [--brief "…"] [--lead me]   对话入口（agent 自己开 mission）
+  mesh get-mission <M-000001>
 
 ${style.bold('人类命令')}
   mesh init [--dir .] [--no-detect]      初始化协作空间（幂等）
@@ -138,6 +165,32 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
     return runAgentCommand(parsed, hub)
+  }
+
+  // -- missions (V2) -------------------------------------------------------
+  // Lead-side commands are the CLI mirror of the mission tools: they need a session,
+  // and they check `is_lead + mission` in the hub, not here.
+  switch (command) {
+    case 'missions':
+      return cmdMissions(parsed, hub)
+    case 'mission':
+      return cmdMission(parsed, hub)
+    case 'mission-lead':
+      return cmdMissionLead(parsed, hub)
+    case 'create-mission':
+      return cmdCreateMission(parsed, hub)
+    case 'get-mission':
+      return cmdGetMission(parsed, hub)
+    case 'plan-mission':
+      return cmdPlanMission(parsed, hub)
+    case 'dispatch-mission':
+      return cmdDispatchMission(parsed, hub)
+    case 'final-verdict':
+      return cmdFinalVerdict(parsed, hub)
+    case 'write-report':
+      return cmdWriteReport(parsed, hub)
+    default:
+      break
   }
 
   // -- human surface -------------------------------------------------------

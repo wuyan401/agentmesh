@@ -10,11 +10,11 @@
  */
 
 import { MESH_ERRORS, MeshError } from './errors.ts'
-import { ROLE_IDS, TASK_STATUSES, MESSAGE_TYPES } from './types.ts'
-import type { AgentCard, Message, RoleCard, SessionCard, TaskCard } from './types.ts'
+import { ROLE_IDS, TASK_STATUSES, MESSAGE_TYPES, MISSION_STATUSES } from './types.ts'
+import type { AgentCard, Message, MissionCard, RoleCard, SessionCard, TaskCard } from './types.ts'
 import { normRel } from './fsx.ts'
 
-export type SchemaKind = 'role' | 'agent' | 'session' | 'task' | 'message'
+export type SchemaKind = 'role' | 'agent' | 'session' | 'task' | 'message' | 'mission'
 
 export class ValidationError extends MeshError {
   readonly errors: string[]
@@ -34,6 +34,7 @@ const ID_PATTERNS = {
   session: /^S-\d{6}$/,
   task: /^T-\d{6}$/,
   message: /^M-\d{6}$/,
+  mission: /^M-\d{6}$/,
   review: /^R-\d{4,6}$/,
   violation: /^V-\d{6}$/,
 }
@@ -123,6 +124,51 @@ export function validateSessionCard(card: SessionCard): string[] {
   if (!Number.isInteger(card.ttl_seconds) || card.ttl_seconds < 10) e.push('ttl_seconds must be an integer >= 10')
   if (card.hello_at !== null && !isIso(card.hello_at)) e.push('hello_at must be null or ISO timestamp')
   if (!Number.isInteger(card.turns) || card.turns < 0) e.push('turns must be a non-negative integer')
+  if (card.mission !== undefined && card.mission !== null && !ID_PATTERNS.mission.test(card.mission)) {
+    e.push('mission must be null or M-000001')
+  }
+  if (card.is_lead !== undefined && typeof card.is_lead !== 'boolean') e.push('is_lead must be boolean')
+  return e
+}
+
+export function validateMissionCard(card: MissionCard): string[] {
+  const e: string[] = []
+  if (!isStr(card.mission_id) || !ID_PATTERNS.mission.test(card.mission_id)) e.push('mission_id must look like M-000001')
+  if (!isStr(card.title) || !card.title.trim()) e.push('title is required')
+  if (!isStr(card.brief)) e.push('brief must be a string (the user words, verbatim)')
+  if (!strArray(card.acceptance)) e.push('acceptance must be a string array')
+  if (!isStr(card.lead_agent) || !card.lead_agent.trim()) e.push('lead_agent is required')
+  if (card.lead_session !== null && (!isStr(card.lead_session) || !ID_PATTERNS.session.test(card.lead_session))) {
+    e.push('lead_session must be null or S-000001')
+  }
+  if (!MISSION_STATUSES.includes(card.status)) e.push(`status must be one of ${MISSION_STATUSES.join('|')}`)
+  if (!strArray(card.tasks)) e.push('tasks must be a string array')
+  else for (const t of card.tasks) if (!ID_PATTERNS.task.test(t)) e.push(`invalid task id in tasks: ${t}`)
+  if (!strArray(card.teammates)) e.push('teammates must be a string array')
+  if (!Array.isArray(card.plan)) e.push('plan must be an array')
+  else {
+    for (const p of card.plan) {
+      if (!p || !isStr(p.task_id) || !ROLE_IDS.includes(p.role) || !isStr(p.why)) {
+        e.push('plan entries must be {task_id, role, why}')
+      }
+    }
+  }
+  if (card.report !== null && !isStr(card.report)) e.push('report must be null or a markdown string')
+  if (card.report_at !== null && !isIso(card.report_at)) e.push('report_at must be null or an ISO timestamp')
+  if (!Number.isInteger(card.rounds) || card.rounds < 0) e.push('rounds must be a non-negative integer')
+  if (card.source !== 'platform' && card.source !== 'chat') e.push('source must be platform|chat')
+  if (card.parent_mission !== null && (!isStr(card.parent_mission) || !ID_PATTERNS.mission.test(card.parent_mission))) {
+    e.push('parent_mission must be null or M-000001')
+  }
+  if (!isIso(card.created_at)) e.push('created_at must be an ISO timestamp')
+  if (!isIso(card.updated_at)) e.push('updated_at must be an ISO timestamp')
+  if (!Array.isArray(card.history)) e.push('history must be an array')
+  else {
+    for (const h of card.history) {
+      if (!h || typeof h !== 'object') e.push('history entries must be objects')
+      else if (!MISSION_STATUSES.includes(h.to)) e.push(`history.to must be a mission status, got ${String(h.to)}`)
+    }
+  }
   return e
 }
 
@@ -147,6 +193,9 @@ export function validateTaskCard(card: TaskCard): string[] {
   if (card.base_commit !== null && !isStr(card.base_commit)) e.push('base_commit must be null or string')
   if (card.submission !== null && typeof card.submission !== 'object') e.push('submission must be null or object')
   if (!strArray(card.reviews)) e.push('reviews must be a string array')
+  if (card.preferred_agent !== undefined && card.preferred_agent !== null && !isStr(card.preferred_agent)) {
+    e.push('preferred_agent must be null or an agent id')
+  }
   if (!Array.isArray(card.history)) e.push('history must be an array')
   else {
     for (const h of card.history) {
@@ -191,6 +240,7 @@ const validators: Record<SchemaKind, (v: unknown) => string[]> = {
   session: (v) => validateSessionCard(v as SessionCard),
   task: (v) => validateTaskCard(v as TaskCard),
   message: (v) => validateMessage(v as Message),
+  mission: (v) => validateMissionCard(v as MissionCard),
 }
 
 export const ID_PATTERN = ID_PATTERNS

@@ -73,9 +73,15 @@ export function writeJsonAtomic(file: string, value: unknown): void {
   writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`)
 }
 
+/** Strip a UTF-8 BOM. Windows tools (PowerShell's `Set-Content -Encoding UTF8`, Notepad)
+ *  write one, and `JSON.parse` refuses it — a human-edited card must still load. */
+export function stripBom(text: string): string {
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text
+}
+
 export function readJson<T>(file: string, fallback?: T): T {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
+    return JSON.parse(stripBom(fs.readFileSync(file, 'utf8'))) as T
   } catch (e) {
     if (fallback !== undefined) return fallback
     throw e
@@ -85,7 +91,7 @@ export function readJson<T>(file: string, fallback?: T): T {
 export function readJsonIfExists<T>(file: string): T | null {
   if (!exists(file)) return null
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as T
+    return JSON.parse(stripBom(fs.readFileSync(file, 'utf8'))) as T
   } catch {
     return null
   }
@@ -111,7 +117,7 @@ export function appendJsonl(file: string, value: unknown): void {
 export function readJsonl<T>(file: string): T[] {
   if (!exists(file)) return []
   const out: T[] = []
-  const text = fs.readFileSync(file, 'utf8')
+  const text = stripBom(fs.readFileSync(file, 'utf8'))
   for (const line of text.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue

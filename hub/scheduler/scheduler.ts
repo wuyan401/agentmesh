@@ -45,6 +45,11 @@ export interface TickReport {
   blocked: Array<{ task_id: string; reason: string }>
   skipped: Array<{ task_id: string | null; reason: string }>
   dead_messages: number
+  /** V2: mission transitions and lead turns made this tick. */
+  missions: {
+    advanced: Array<{ mission_id: string; from: string; to: string; note: string }>
+    leads: SpawnRecord[]
+  }
 }
 
 const MAX_RELEASES_PER_TASK = 3
@@ -93,6 +98,7 @@ export class Scheduler {
       blocked: [],
       skipped: [],
       dead_messages: 0,
+      missions: { advanced: [], leads: [] },
     }
 
     this.sweepSessions(report)
@@ -100,6 +106,10 @@ export class Scheduler {
     this.reapSubmittedWork(report)
     this.releaseAbandonedReviews(report)
     this.publishUnblocked()
+    // Missions first: a planning mission that just finished needs its cards to become
+    // claimable in this same tick, not the next one.
+    this.advanceMissions(report)
+    this.dispatchLeadTurns(report)
     this.dispatchWorkers(report)
     this.dispatchReviews(report)
     this.integrate(report)
@@ -122,7 +132,9 @@ export class Scheduler {
       blocked: [],
       skipped: [],
       dead_messages: 0,
+      missions: { advanced: [], leads: [] },
     }
+
     this.sweepSessions(report)
     this.releaseStrandedTasks(report)
     this.reapSubmittedWork(report)
@@ -237,6 +249,64 @@ export class Scheduler {
     }
   }
 
+  // -- missions (V2) -------------------------------------------------------
+
+  /** Run the mission auto-advance rules (spec §1.2) once. */
+  private advanceMissions(report: TickReport): void {
+    for (const change of this.hub.missions.advanceMissions()) {
+      report.missions.advanced.push(change)
+    }
+  }
+
+  /**
+   * Spawn the lead turn for a mission that needs one: `intake` (plan it) or
+   * `integrating` (integrate + second acceptance + report).
+   *
+   * A builtin lead (the human operator) is not spawned — the human drives it through
+   * the CLI, which is exactly how the M1 acceptance walk works.
+   */
+  private dispatchLeadTurns(report: TickReport): void {
+    const pending = this.hub.missions.missionsNeedingLead()
+    if (pending.length === 0) return
+    for (const { mission, phase } of pending) {
+      const agent = this.hub.store.getAgent(mission.lead_agent)
+      if (!agent || !agent.enabled) {
+        report.skipped.push({ task_id: null, reason: `mission ${mission.mission_id}: lead agent ${mission.lead_agent} is not usable` })
+        continue
+      }
+      if (agent.kind === 'builtin') {
+        report.skipped.push({
+          task_id: null,
+          reason: `mission ${mission.mission_id}: builtin lead — drive it by hand (mesh mission plan …)`,
+        })
+        continue
+      }
+      const running = this.hub.store.liveSessions().filter((s) => s.lifespan === 'ephemeral' || s.pid !== null)
+      if (running.length >= this.hub.config.max_concurrent_sessions) {
+        report.skipped.push({ task_id: null, reason: `mission ${mission.mission_id}: no session budget for the lead turn` })
+        continue
+      }
+      try {
+        const session = this.hub.missions.createLeadSession(mission.mission_id, { spawned_by: 'hub.scheduler' })
+        const record = this.launch(session, agent, null, null, {
+          extraSection: this.hub.missions.leadBrief(mission, phase),
+        })
+        report.missions.leads.push(record)
+      } catch (e) {
+        report.skipped.push({
+          task_id: null,
+          reason: `mission ${mission.mission_id}: ${e instanceof MeshError ? `${e.code}: ${e.message}` : (e as Error).message}`,
+        })
+      }
+    }
+  }
+
+  /** Record first participation so the mission's teammate list stays in order. */
+  private noteMissionParticipant(taskId: string, agentId: string): void {
+    const mission = this.hub.missions.missionOfTask(taskId)
+    if (mission) this.hub.missions.noteParticipant(mission.mission_id, agentId)
+  }
+
   // -- dispatching ---------------------------------------------------------
 
   private activeCount(agentId: string): number {
@@ -252,6 +322,12 @@ export class Scheduler {
       .filter((a) => this.hub.identity.concurrencyAvailable(a) > 0)
       .filter((a) => (task ? this.hub.identity.sodConflict(task, a.agent_id, role) === null : true))
       .sort((a, b) => a.cost_tier - b.cost_tier || this.activeCount(a.agent_id) - this.activeCount(b.agent_id) || a.agent_id.localeCompare(b.agent_id))
+    // V2: the lead may name the implementer. Honour it when that agent is eligible
+    // (capabilities, concurrency, SoD) — the lead's intent never overrides the rules.
+    if (task?.preferred_agent) {
+      const preferred = candidates.find((a) => a.agent_id === task.preferred_agent)
+      if (preferred) return preferred
+    }
     return candidates[0] ?? null
   }
 
@@ -299,6 +375,7 @@ export class Scheduler {
       const bound = this.hub.store.requireSession(session.session_id)
       bound.sandbox = claimed.worktree
       this.hub.store.saveSession(bound)
+      this.noteMissionParticipant(claimed.task_id, agent.agent_id)
       const contextPath = this.ensureContext(task.task_id, session.session_id)
       return this.launch(bound, agent, claimed, contextPath)
     } catch (e) {
@@ -389,6 +466,7 @@ export class Scheduler {
       const bound = this.hub.store.requireSession(session.session_id)
       bound.sandbox = fresh.worktree
       this.hub.store.saveSession(bound)
+      this.noteMissionParticipant(fresh.task_id, agent.agent_id)
       this.hub.store.auditEvent('review.attempt', {
         task_id: task.task_id,
         session_id: session.session_id,

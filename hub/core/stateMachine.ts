@@ -10,7 +10,7 @@
 import { MeshError, MESH_ERRORS } from './errors.ts'
 import { nowIso } from './fsx.ts'
 import { TASK_TRANSITIONS } from './types.ts'
-import type { TaskCard, TaskStatus } from './types.ts'
+import type { MissionCard, MissionHistoryEntry, MissionStatus, TaskCard, TaskStatus } from './types.ts'
 
 export function canTransition(from: TaskStatus, to: TaskStatus): boolean {
   return (TASK_TRANSITIONS[from] ?? []).includes(to)
@@ -76,3 +76,74 @@ export function isOpen(card: TaskCard): boolean {
 
 /** Statuses a dependency must reach before a task becomes ready. */
 export const SATISFIED_STATUSES: readonly TaskStatus[] = ['merged']
+
+// ---------------------------------------------------------------------------
+// Mission state machine (V2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The mission whitelist. Kept next to the task one on purpose: both are "the only
+ * place a status may change", and reading them side by side is how you check that
+ * V2 only added edges.
+ *
+ * Note on `rejected`: the spec's diagram draws the rework loop as
+ * `final_review → integrating`. We keep rejection as a *first-class, observable*
+ * status instead — `final_review → rejected → executing → integrating` — so a human
+ * can see that the second acceptance failed, and so the rework loop is auditable.
+ * Recorded in docs/DECISIONS-V2.md.
+ */
+export const MISSION_TRANSITIONS: Readonly<Record<MissionStatus, readonly MissionStatus[]>> = {
+  intake: ['planning', 'blocked', 'cancelled'],
+  planning: ['executing', 'blocked', 'cancelled'],
+  executing: ['integrating', 'blocked', 'cancelled'],
+  integrating: ['final_review', 'planning', 'blocked', 'cancelled'],
+  final_review: ['completed', 'rejected', 'planning', 'blocked', 'cancelled'],
+  rejected: ['executing', 'planning', 'blocked', 'cancelled'],
+  blocked: ['planning', 'executing', 'integrating', 'final_review', 'cancelled'],
+  completed: [],
+  cancelled: [],
+}
+
+export function canMissionTransition(from: MissionStatus, to: MissionStatus): boolean {
+  return (MISSION_TRANSITIONS[from] ?? []).includes(to)
+}
+
+export class IllegalMissionTransition extends MeshError {
+  constructor(missionId: string, from: MissionStatus, to: MissionStatus) {
+    super(MESH_ERRORS.TRANSITION_ILLEGAL, `illegal mission transition ${from} → ${to} for ${missionId}`, {
+      mission_id: missionId,
+      from,
+      to,
+      allowed: MISSION_TRANSITIONS[from] ?? [],
+    })
+    this.name = 'IllegalMissionTransition'
+  }
+}
+
+/** Mutates the mission card in place and returns it. */
+export function applyMissionTransition(
+  card: MissionCard,
+  to: MissionStatus,
+  ctx: { by: string | null; note?: string },
+): MissionCard {
+  const from = card.status
+  if (from === to) return card
+  if (!canMissionTransition(from, to)) throw new IllegalMissionTransition(card.mission_id, from, to)
+  card.status = to
+  card.updated_at = nowIso()
+  const entry: MissionHistoryEntry = { at: card.updated_at, from, to, by: ctx.by }
+  if (ctx.note) entry.note = ctx.note
+  card.history.push(entry)
+  return card
+}
+
+/** Statuses in which a mission still expects work. */
+export const MISSION_OPEN_STATUSES: readonly MissionStatus[] = [
+  'intake',
+  'planning',
+  'executing',
+  'integrating',
+  'final_review',
+  'rejected',
+  'blocked',
+]

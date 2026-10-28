@@ -126,7 +126,7 @@ export function initMesh(opts: InitOptions): InitResult {
       created_at: nowIso(),
       main_branch: mainBranch,
       base_commit: git.headSha(),
-      counters: { task: 0, message: 0, session: 0, review: 0, violation: 0 },
+      counters: { task: 0, message: 0, session: 0, review: 0, violation: 0, mission: 0 },
       flags: { initialized: true },
     }
     writeJsonAtomic(paths.stateFile, state)

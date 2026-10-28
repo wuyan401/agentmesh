@@ -26,6 +26,10 @@ export interface CreateSessionInput {
   ttl_seconds?: number
   pid?: number | null
   resume_token?: string | null
+  /** V2: bind the session to a mission (null for V1-style standalone work). */
+  mission?: string | null
+  /** V2: this session is the mission lead. */
+  is_lead?: boolean
 }
 
 export class IdentityService {
@@ -82,6 +86,8 @@ export class IdentityService {
       ttl_seconds: input.ttl_seconds ?? agent.ttl_seconds,
       hello_at: null,
       resume_token: input.resume_token ?? null,
+      mission: input.mission ?? null,
+      is_lead: input.is_lead ?? false,
       turns: 0,
       exit: null,
     }
@@ -93,6 +99,8 @@ export class IdentityService {
       task: session.task,
       spawned_by: session.spawned_by,
       lifespan: session.lifespan,
+      mission: session.mission,
+      is_lead: session.is_lead,
     })
     return session
   }
@@ -204,6 +212,54 @@ export class IdentityService {
 
   holdersOf(role: RoleId): SessionCard[] {
     return this.store.liveSessions().filter((s) => s.role === role)
+  }
+
+  // -- mission lead (V2) ---------------------------------------------------
+
+  /**
+   * Resolve a session that is the lead of `missionId`.
+   *
+   * Permission order is spec'd as **is_lead + mission first, role second**: a lead
+   * holds mission-scoped rights regardless of which role card it also carries, and a
+   * session that is not the lead of *this* mission never gets them, even if it leads
+   * another one.
+   */
+  requireLead(sessionId: string, missionId: string): Identity {
+    const identity = this.requireIdentity(sessionId)
+    const mission = this.store.requireMission(missionId)
+    const matchesMission = identity.session.is_lead && identity.session.mission === missionId
+    if (!matchesMission) {
+      throw new MeshError(
+        MESH_ERRORS.NOT_LEAD,
+        `session ${sessionId} is not the lead of ${missionId}`,
+        {
+          session_id: sessionId,
+          mission_id: missionId,
+          session_mission: identity.session.mission,
+          is_lead: identity.session.is_lead,
+          lead_session: mission.lead_session,
+          hint: 'lead rights are per mission; whoever received the job leads it',
+        },
+      )
+    }
+    if (mission.lead_session && mission.lead_session !== sessionId) {
+      throw new MeshError(
+        MESH_ERRORS.NOT_LEAD,
+        `session ${sessionId} is a former lead of ${missionId}; current lead is ${mission.lead_session}`,
+        { session_id: sessionId, mission_id: missionId, lead_session: mission.lead_session },
+      )
+    }
+    return identity
+  }
+
+  /** Live lead session of a mission, if any. */
+  leadSessionOf(missionId: string): SessionCard | null {
+    return (
+      this.store
+        .liveSessions()
+        .filter((s) => s.is_lead && s.mission === missionId)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null
+    )
   }
 
   // -- separation of duties ------------------------------------------------

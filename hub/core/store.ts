@@ -14,9 +14,9 @@ import { MeshError, MESH_ERRORS } from './errors.ts'
 import { appendJsonl, ensureDir, exists, listFiles, nowIso, pad, readJson, readJsonIfExists, readJsonl, sha256, writeFileAtomic, writeJsonAtomic } from './fsx.ts'
 import { withLock } from './lock.ts'
 import { assertValid } from './schema.ts'
-import type { AgentCard, Message, MeshState, ReviewRecord, SessionCard, TaskCard, ViolationRecord } from './types.ts'
+import type { AgentCard, Message, MeshState, MissionCard, ReviewRecord, SessionCard, TaskCard, ViolationRecord } from './types.ts'
 
-export type IdKind = 'task' | 'message' | 'session' | 'review' | 'violation'
+export type IdKind = 'task' | 'message' | 'session' | 'review' | 'violation' | 'mission'
 
 const ID_PREFIX: Record<IdKind, string> = {
   task: 'T',
@@ -24,9 +24,10 @@ const ID_PREFIX: Record<IdKind, string> = {
   session: 'S',
   review: 'R',
   violation: 'V',
+  mission: 'M',
 }
 
-const ID_WIDTH: Record<IdKind, number> = { task: 6, message: 6, session: 6, review: 4, violation: 6 }
+const ID_WIDTH: Record<IdKind, number> = { task: 6, message: 6, session: 6, review: 4, violation: 6, mission: 6 }
 
 export class MeshStore {
   readonly paths: MeshPaths
@@ -108,6 +109,48 @@ export class MeshStore {
 
   deleteTask(taskId: string): void {
     fs.rmSync(this.paths.taskFile(taskId), { force: true })
+  }
+
+  // -- missions (V2) -------------------------------------------------------
+
+  listMissions(): MissionCard[] {
+    const out: MissionCard[] = []
+    for (const file of listFiles(this.paths.missionsDir, '.json')) {
+      const card = readJsonIfExists<MissionCard>(file)
+      if (card) out.push(card)
+    }
+    out.sort((a, b) => a.mission_id.localeCompare(b.mission_id))
+    return out
+  }
+
+  getMission(missionId: string): MissionCard | null {
+    return readJsonIfExists<MissionCard>(this.paths.missionFile(missionId))
+  }
+
+  requireMission(missionId: string): MissionCard {
+    const card = this.getMission(missionId)
+    if (!card) throw new MeshError(MESH_ERRORS.UNKNOWN_ENTITY, `unknown mission: ${missionId}`, { mission_id: missionId })
+    return card
+  }
+
+  saveMission(card: MissionCard): void {
+    assertValid('mission', card, card.mission_id)
+    card.updated_at = nowIso()
+    writeJsonAtomic(this.paths.missionFile(card.mission_id), card)
+  }
+
+  /** Write the lead's report next to the mission card (report.md is the human entry). */
+  writeMissionReport(missionId: string, markdown: string): string {
+    const dir = this.paths.missionDir(missionId)
+    ensureDir(dir)
+    const file = path.join(dir, 'report.md')
+    writeFileAtomic(file, markdown)
+    return this.paths.rel(file)
+  }
+
+  readMissionReport(missionId: string): string | null {
+    const file = path.join(this.paths.missionDir(missionId), 'report.md')
+    return exists(file) ? fs.readFileSync(file, 'utf8') : null
   }
 
   // -- agents --------------------------------------------------------------

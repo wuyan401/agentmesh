@@ -406,6 +406,103 @@ export class HubApi {
     return ok({ task_id: task.task_id, status: task.status, blocked_reason: task.blocked_reason })
   }
 
+  // -- missions (V2) -------------------------------------------------------
+
+  /** Build a mission. Planning roles and the human operator may do this. */
+  create_mission(
+    sessionId: string,
+    input: {
+      title: string
+      brief: string
+      acceptance?: string[]
+      lead_agent?: string | null
+      parent_mission?: string | null
+    },
+  ): ApiResult {
+    const id = this.identity(sessionId)
+    const canCreate = canPlan(id.session.role) || id.session.is_lead
+    if (!canCreate) {
+      throw new MeshError(MESH_ERRORS.ROLE_FORBIDDEN, `role ${id.session.role} may not create missions`, {
+        role: id.session.role,
+        plan_roles: [...PLAN_ROLES],
+      })
+    }
+    const parent = input.parent_mission ?? (id.session.is_lead ? id.session.mission : null)
+    const mission = this.hub.missions.createMission(
+      {
+        title: input.title,
+        brief: input.brief,
+        acceptance: input.acceptance ?? [],
+        lead_agent: input.lead_agent ?? null,
+        parent_mission: parent,
+        // Explicit: the chat entry records where it came from; the platform never guesses.
+        source: id.agent.kind === 'builtin' ? 'platform' : 'chat',
+      },
+      id,
+    )
+    return ok({
+      mission_id: mission.mission_id,
+      status: mission.status,
+      lead_agent: mission.lead_agent,
+      source: mission.source,
+      next: 'Lead 需要开会话拆解：`plan_mission` 然后 `dispatch_mission`',
+    })
+  }
+
+  get_mission(sessionId: string, missionId: string): ApiResult {
+    this.identity(sessionId)
+    const view = this.hub.missions.getView(missionId)
+    return ok({
+      ...view.mission,
+      task_summaries: view.tasks,
+      progress: view.progress,
+      lead_session_live: view.lead_session_live,
+    })
+  }
+
+  plan_mission(sessionId: string, missionId: string, tasks: unknown): ApiResult {
+    const id = this.hub.identity.requireLead(sessionId, missionId)
+    const items = Array.isArray(tasks) ? (tasks as never[]) : []
+    const result = this.hub.missions.planMission(id.session.session_id, missionId, items)
+    return ok({
+      mission_id: missionId,
+      status: result.mission.status,
+      tasks: result.created.map((t) => ({ task_id: t.task_id, title: t.title, role: t.role, scope_write: t.scope.write })),
+      next: '`dispatch_mission` 让调度器开始派活',
+    })
+  }
+
+  dispatch_mission(sessionId: string, missionId: string): ApiResult {
+    const id = this.hub.identity.requireLead(sessionId, missionId)
+    const mission = this.hub.missions.dispatchMission(id.session.session_id, missionId)
+    return ok({ mission_id: missionId, status: mission.status, tasks: mission.tasks })
+  }
+
+  final_verdict(
+    sessionId: string,
+    missionId: string,
+    approved: boolean,
+    notes: string,
+    rejects?: string[],
+  ): ApiResult {
+    const id = this.hub.identity.requireLead(sessionId, missionId)
+    const result = this.hub.missions.finalVerdict(id.session.session_id, missionId, approved, notes, rejects)
+    return ok({
+      mission_id: missionId,
+      status: result.mission.status,
+      rounds: result.mission.rounds,
+      rejected_tasks: result.rejected_tasks,
+      replan: result.replan,
+      next: approved ? '写报告：`write_report(mission_id, markdown)`' : '打回的卡会重新排队；或重拆（planning）',
+    })
+  }
+
+  write_report(sessionId: string, missionId: string, markdown: string): ApiResult {
+    const id = this.hub.identity.requireLead(sessionId, missionId)
+    const result = this.hub.missions.writeReport(id.session.session_id, missionId, markdown)
+    return ok({ mission_id: missionId, status: result.mission.status, report_path: result.path, note: 'mission 已完成' })
+  }
+
   // -- messages ------------------------------------------------------------
 
   send(
