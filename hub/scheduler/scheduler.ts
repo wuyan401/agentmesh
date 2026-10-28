@@ -326,7 +326,8 @@ export class Scheduler {
         continue
       }
       const running = this.hub.store.liveSessions().filter((s) => s.lifespan === 'ephemeral' || s.pid !== null)
-      if (running.length >= this.hub.config.max_concurrent_sessions) {
+      const maxLeadSessions = this.hub.config.max_concurrent_sessions
+      if (maxLeadSessions > 0 && running.length >= maxLeadSessions) {
         report.skipped.push({ task_id: null, reason: `mission ${mission.mission_id}: no session budget for the lead turn` })
         continue
       }
@@ -450,7 +451,11 @@ export class Scheduler {
     // CLI-attributed or builtin daemon Session has no process and must not starve
     // the board of worker slots.
     const running = this.hub.store.liveSessions().filter((s) => s.lifespan === 'ephemeral' || s.pid !== null)
-    const budget = Math.max(0, this.hub.config.max_concurrent_sessions - running.length)
+    // `0` means unlimited, same convention as mission_max_depth. A hard cap would
+    // contradict the "no limits" requirement, but reading 0 as "zero slots" would
+    // silently freeze the whole board — so unlimited has to be an explicit branch.
+    const maxSessions = this.hub.config.max_concurrent_sessions
+    const budget = maxSessions > 0 ? Math.max(0, maxSessions - running.length) : Infinity
     if (budget === 0) return
     const ready = this.hub.store.listTasks().filter((t) => t.status === 'ready')
     for (const task of ready) {

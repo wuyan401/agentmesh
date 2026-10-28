@@ -42,13 +42,13 @@ export const DEFAULT_CONFIG: MeshConfig = {
   auto_integrate: true,
   auto_review: true,
   // V2 §6: no artificial limits by default. 16 is "enough", not a narrative limit.
-  max_concurrent_sessions: 16,
+  max_concurrent_sessions: 0, // 0 = unlimited: the user asked for no caps, only scope review stays
   dispatch_interval_ms: 3000,
   context_level: 'standard',
   stale_session_seconds: 1800,
   review_runs_checks: true,
   mission_lead_agent: null,
-  mission_max_depth: 3,
+  mission_max_depth: 0, // 0 = unlimited nesting
   reassign_after_rejections: 2,
 }
 

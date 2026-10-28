@@ -603,6 +603,14 @@ test('mission: a task knows which mission owns it, and preferred_agent is honour
 test('mission: a mission can be nested but stops at the configured depth', () => {
   const h = missionHarness('mission-nesting')
   try {
+    // Nesting is unlimited by default (the platform ships with no caps), so the cap
+    // has to be set explicitly here. Asserting the old default would just be
+    // asserting that the default is restrictive, which is no longer true.
+    fs.writeFileSync(
+      path.join(h.hub.paths.meshDir, 'config.json'),
+      JSON.stringify({ ...h.hub.config, mission_max_depth: 3 }),
+    )
+    h.hub.invalidateConfig()
     const root = createMission(h, 'root')
     const child = h.hub.missions.createMission({ title: 'child', brief: 'child', lead_agent: 'mesh-human', parent_mission: root })
     assert.equal(child.parent_mission, root)
