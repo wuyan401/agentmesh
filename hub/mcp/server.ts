@@ -247,6 +247,23 @@ const TOOLS: ToolDef[] = [
     handler: (api, session, args) => api.publish_task(session, arg(args, 'task_id')),
   },
   {
+    name: 'start_mission',
+    description:
+      'Start a mission where YOU are the lead, and be done with your turn: the platform spawns your lead session, which splits the work, dispatches it, integrates and writes the report. Use this only when the user explicitly asked for the AgentMesh / multi-agent flow — not because a task looks big.',
+    inputSchema: obj({
+      title: str('one-line title'),
+      brief: str("the user's words, verbatim"),
+      acceptance: { type: 'array', items: { type: 'string' }, description: 'mission-level acceptance criteria (optional)' },
+    }, ['title', 'brief']),
+    handler: (api, session, args) =>
+      api.start_mission(
+        session,
+        arg(args, 'title'),
+        arg(args, 'brief'),
+        Array.isArray(args['acceptance']) ? (args['acceptance'] as string[]) : [],
+      ),
+  },
+  {
     name: 'create_mission',
     description:
       'Create a mission (one thing the user asked for) and pick its lead. Whoever receives the job leads it. Only planning roles, the mission lead (nested missions) or the human operator may call this.',

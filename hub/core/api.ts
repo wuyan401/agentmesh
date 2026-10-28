@@ -12,6 +12,7 @@ import path from 'node:path'
 import { MeshError, MESH_ERRORS } from './errors.ts'
 import { matchAnyGlob, normRel } from './fsx.ts'
 import { getRoleCard } from '../roles/cards.ts'
+import { Scheduler } from '../scheduler/scheduler.ts'
 import { buildTeammates } from './teammates.ts'
 import { canPlan, PLAN_ROLES } from './types.ts'
 import type { PeerScore } from './types.ts'
@@ -448,6 +449,71 @@ export class HubApi {
       lead_agent: mission.lead_agent,
       source: mission.source,
       next: 'Lead 需要开会话拆解：`plan_mission` 然后 `dispatch_mission`',
+    })
+  }
+
+  /**
+   * §5.2 chat entry: `start_mission` = create + put the lead to work.
+   *
+   * The lead is the caller — whoever received the job leads it. The scheduler is asked
+   * to spawn the lead turn immediately, so the caller can end its own turn right away
+   * ("你是 lead：拆解、派活、整合都由你在后续被拉起的会话里完成").
+   */
+  start_mission(
+    sessionId: string,
+    title: string,
+    brief: string,
+    acceptance?: string[],
+  ): ApiResult {
+    const id = this.identity(sessionId)
+    if (!id.session.is_lead && !canPlan(id.session.role)) {
+      throw new MeshError(MESH_ERRORS.ROLE_FORBIDDEN, `role ${id.session.role} may not start a mission`, {
+        role: id.session.role,
+        plan_roles: [...PLAN_ROLES],
+      })
+    }
+    if (!id.agent.capabilities.includes('lead')) {
+      throw new MeshError(
+        MESH_ERRORS.CAPABILITY_MISSING,
+        `${id.agent.agent_id} cannot lead: the 'lead' capability is not registered on its card`,
+        { agent_id: id.agent.agent_id, hint: `mesh agents roles ${id.agent.agent_id} lead` },
+      )
+    }
+    const mission = this.hub.missions.createMission(
+      {
+        title,
+        brief,
+        acceptance: acceptance ?? [],
+        lead_agent: id.agent.agent_id,
+        parent_mission: id.session.mission,
+        source: 'chat',
+      },
+      id,
+    )
+    const leadSession = this.hub.missions.createLeadSession(mission.mission_id, {
+      spawned_by: id.session.session_id,
+    })
+    let spawned: string | null = null
+    let note = 'lead 会话已拉起，它会拆卡并派活；你可以结束这一轮了'
+    if (id.agent.kind === 'builtin') {
+      note = 'lead 是内置实体（人类），不会自动开会话；用 `mesh mission lead <id>` 手工驱动'
+    } else {
+      const record = new Scheduler(this.hub).spawnLeadTurn(
+        this.hub.store.requireMission(mission.mission_id),
+        'planning',
+        leadSession,
+      )
+      spawned = record.session_id
+    }
+    return ok({
+      mission_id: mission.mission_id,
+      title: mission.title,
+      lead_agent: mission.lead_agent,
+      lead_session: leadSession.session_id,
+      spawned_session: spawned,
+      status: this.hub.store.requireMission(mission.mission_id).status,
+      source: 'chat',
+      note,
     })
   }
 

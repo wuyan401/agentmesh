@@ -5,6 +5,7 @@ import path from 'node:path'
 import { MISSION_TRANSITIONS, applyMissionTransition, canMissionTransition } from '../../hub/core/stateMachine.ts'
 import { MeshError } from '../../hub/core/errors.ts'
 import { Scheduler } from '../../hub/scheduler/scheduler.ts'
+import { HubApi } from '../../hub/core/api.ts'
 import { addAgent, commitInWorktree, createHarness, newSession, worktreeOf } from '../helpers.ts'
 import type { Harness } from '../helpers.ts'
 import type { MissionStatus, RoleId } from '../../hub/core/types.ts'
@@ -529,6 +530,48 @@ test('mission: teammates are recorded in participation order', () => {
     h.hub.missions.noteParticipant(missionId, 'sup')
     h.hub.missions.noteParticipant(missionId, 'dev') // duplicate ignored
     assert.deepEqual(h.hub.store.requireMission(missionId).teammates, ['mesh-human', 'dev', 'sup'])
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('mission: start_mission makes the caller the lead and records the chat source', () => {
+  const h = missionHarness('mission-start')
+  try {
+    // A builtin lead is used here so the test does not spawn a real process; the
+    // contract (lead = caller, source = chat, a lead session exists) is the same.
+    const session = newSession(h.hub, 'mesh-human', 'planner')
+    const api = new HubApi(h.hub)
+    const result = api.start_mission(session.session_id, '一句话起一个 mission', '用户原话：做个小工具') as {
+      ok: boolean
+      data: { mission_id: string; lead_agent: string; lead_session: string; source: string }
+    }
+    assert.equal(result.ok, true)
+    assert.equal(result.data.lead_agent, 'mesh-human', 'the caller leads')
+    assert.equal(result.data.source, 'chat')
+    const mission = h.hub.store.requireMission(result.data.mission_id)
+    assert.equal(mission.lead_session, result.data.lead_session)
+    assert.equal(mission.status, 'intake')
+    assert.ok(
+      h.hub.store.getSession(result.data.lead_session),
+      'a lead session must exist so the scheduler can hand it the planning turn',
+    )
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('mission: start_mission refuses an agent that has no lead capability', () => {
+  const h = missionHarness('mission-start-nolead')
+  try {
+    // A planning role (so the role check passes) but no `lead` capability on the card.
+    addAgent(h.hub, 'planner-only', ['planner'])
+    const session = newSession(h.hub, 'planner-only', 'planner')
+    const api = new HubApi(h.hub)
+    assert.throws(
+      () => api.start_mission(session.session_id, 't', 'b'),
+      (e: { code?: string }) => e.code === 'MESH_CAPABILITY_MISSING',
+    )
   } finally {
     h.cleanup()
   }

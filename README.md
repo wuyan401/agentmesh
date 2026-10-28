@@ -46,6 +46,60 @@ Node ≥ 22.6（需要原生 TypeScript 执行 + `node:sqlite`），git 2.x。**
 
 ---
 
+## V2：mission —— 谁收到任务，谁主导
+
+V1 是「人建卡 → 平台派活」。V2 多了一层：任务以 **mission** 为单位下发，
+收到任务的那个 agent 成为 **lead**——由它拆解、派给擅长的队友、把审查交给另一个 agent，
+最后自己整合、二次验收、出报告。验收不过就打回；多次不过就换评分更高的 agent 接手。
+
+### 两个入口
+
+```bash
+# 平台入口：人在仓库里直接下发
+mesh mission "做一个留言板：邮箱必填、提交即渲染、刷新后数据保留" \
+  --accept "邮箱非法不允许提交" --accept "刷新后数据仍在" --lead dsh-01
+
+# agent 对话入口：在任意 agent 的会话里说「用 AgentMesh 做这件事」
+#   → 该 agent 调 start_mission(title, brief, acceptance) 后结束自己这一轮，
+#     平台把它作为 lead 拉起。只有用户明确要求时才走这条路，见 docs/INTEGRATION.md
+```
+
+### 评分决定谁上
+
+每个 agent 有一份九维画像（性格 / 擅长 / 弱势 / 能力范围 / 独特细节 / 质量分 / 花费 / 可靠性 / 速度）。
+
+```bash
+mesh profile list                         # 九个维度 + 战绩
+mesh profile show dsh-01
+mesh profile set dsh-01 quality_score 90  # 手编；锁定后不再被互评覆盖
+```
+
+调度按 `0.55×质量 + 0.20×省钱 + 0.15×可靠 + 0.10×专长匹配 − 0.05×负载` 选人。
+同一次 mission 里真正合作过的 agent 可以 `rate_peer` 互评，加权进画像。
+
+打回会累加 `rejection_count`：达到阈值后，之前所有经手过这张卡的 agent 都被排除，
+换评分最高的人上；没有可用候选时卡变 `blocked`，并写明「需要更强或更多的 agent」。
+
+### 协作史
+
+每完成一次 mission 会落成一份人能直接读的目录：
+
+```
+.mesh/HISTORY.md                 一行一个 mission
+.mesh/missions/M-000001/
+  report.md                      lead 的交付报告
+  timeline.md                    每次领取/提交/审查/合并/消息，按时间升序
+  tasks.json                     每张卡的终态 + 完整审查记录（含逐条 evidence）
+  context/                       发出去的每一份上下文包（证据）
+```
+
+`mesh serve` 打开观察台，missions 页可直接看状态链、时间线、卡片与证据、交付报告（含 390px 移动端）。
+
+**上下文注入**：每个 worker 启动时都会拿到「你在哪」（哪个 mission、哪张卡、第几个执行者、谁是 lead）
+和「队友表」（每个人的性格/擅长/弱势/质量分/本轮在做什么）；`minimal` 档只带紧凑版。
+
+---
+
 ## 它解决什么问题
 
 单个 Agent 很能干，但拿到任务会倾向端到端独自做完：不会分工、不会并行、不会互相校验。

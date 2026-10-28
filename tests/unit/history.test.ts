@@ -234,6 +234,22 @@ test('history: export copies the whole bundle elsewhere', () => {
   }
 })
 
+test('history: an event written to both ledgers appears once (mission-level rejection)', () => {
+  const h = harness('hist-dedupe')
+  try {
+    const { missionId, taskId } = completedMission(h)
+    // A mission-level rejection writes task.rejected_after_merge to BOTH ledgers, with
+    // timestamps a millisecond apart. The timeline must show it once.
+    h.hub.board.rejectMergedTask(taskId, 'test', '二次验收打回')
+    h.hub.store.auditEvent('task.rejected_after_merge', { task_id: taskId, by: 'test', note: '二次验收打回' })
+    const events = h.hub.history.timelineEvents(h.hub.store.requireMission(missionId))
+    const rejections = events.filter((e) => e.kind === 'task.rejected_after_merge')
+    assert.equal(rejections.length, 1, `expected one rejection row, got ${rejections.length}`)
+  } finally {
+    h.cleanup()
+  }
+})
+
 test('history: closing a mission with no cards still writes a readable bundle', () => {
   const h = harness('hist-empty')
   try {

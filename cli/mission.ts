@@ -12,6 +12,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
 import { Scheduler } from '../hub/scheduler/scheduler.ts'
+import { HubApi } from '../hub/core/api.ts'
 import { MissionHistory } from '../hub/core/history.ts'
 import type { Hub } from '../hub/core/hub.ts'
 import type { MissionCard, MissionStatus } from '../hub/core/types.ts'
@@ -104,7 +105,29 @@ export function cmdMission(parsed: ParsedArgs, hub: Hub): number | Promise<numbe
   if (first === 'close') return cmdMissionClose(parsed, hub)
   if (first === 'export') return cmdMissionExport(parsed, hub)
   if (first && MISSION_ID.test(first)) return cmdMissionDetail(parsed, hub, first)
+  // A file path / id is not a title. Without this guard `mesh mission .mesh/missions/M-000001.json`
+  // quietly *created* a mission titled "M-000001.json" — and its lead turn then ate a
+  // real agent's concurrency budget. Seen for real during the M5 run.
+  if (first && looksLikeNotATitle(first)) {
+    throw new MeshError(
+      MESH_ERRORS.SCHEMA_INVALID,
+      `"${first}" looks like a path or an id, not a mission title`,
+      {
+        hint: 'to create: mesh mission "你想做什么" · to view: mesh mission M-000001',
+      },
+    )
+  }
   return createAndStart(parsed, hub)
+}
+
+/** Anything that is obviously an identifier or a filename rather than a sentence. */
+function looksLikeNotATitle(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  if (t.includes('/') || t.includes('\\')) return true
+  if (/\.(json|md|ts|js|mjs|txt|log|yaml|yml)$/i.test(t)) return true
+  if (/^[MTS]-\d{6}/.test(t)) return true
+  return false
 }
 
 /**
@@ -386,6 +409,36 @@ export function cmdCreateMission(parsed: ParsedArgs, hub: Hub): number {
     identity,
   )
   process.stdout.write(`${style.green('✔')} ${mission.mission_id} ${missionBadge(mission.status)} lead=${mission.lead_agent}\n`)
+  return 0
+}
+
+/**
+ * `mesh start-mission "…"` — the chat entry (§5.2): create the mission with YOU as
+ * lead and have the platform spawn your lead session to do the work.
+ */
+export function cmdStartMission(parsed: ParsedArgs, hub: Hub): number {
+  const title = parsed.positionals.join(' ').trim()
+  if (!title) {
+    throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'usage: mesh start-mission "标题" [--brief "…"] [--accept "…"]')
+  }
+  const session = sessionIdFrom(parsed)
+  const result = new HubApi(hub).start_mission(
+    session,
+    title,
+    str(parsed, 'brief') ?? title,
+    list(parsed, 'accept'),
+  ) as { ok: boolean; data: Record<string, unknown> }
+  const data = result.data as {
+    mission_id: string
+    lead_agent: string
+    lead_session: string
+    spawned_session: string | null
+    status: string
+    note: string
+  }
+  process.stdout.write(`${style.green('✔')} ${data.mission_id} lead=${data.lead_agent}（你）\n`)
+  process.stdout.write(`  lead 会话 ${data.lead_session}${data.spawned_session ? ` · 已拉起 ${data.spawned_session}` : ''}\n`)
+  process.stdout.write(`  ${style.dim(data.note)}\n`)
   return 0
 }
 

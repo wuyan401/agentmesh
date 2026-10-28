@@ -56,6 +56,7 @@ import {
 } from './mission.ts'
 import { cmdProfile, cmdRatePeer } from './profile.ts'
 import { cmdTeammates } from './human.ts'
+import { cmdStartMission } from './mission.ts'
 import { createRequire } from 'node:module'
 
 const require_ = createRequire(import.meta.url)
@@ -91,7 +92,8 @@ ${style.bold('Mission 的 lead 动作')}（都需要 --session 或 MESH_SESSION_
   mesh dispatch-mission <M-000001>
   mesh final-verdict <M-000001> --approve|--reject --notes "…" [--reject-task T-000012]
   mesh write-report <M-000001> --file report.md
-  mesh create-mission "标题" [--brief "…"] [--lead me]   对话入口（agent 自己开 mission）
+  mesh create-mission "标题" [--brief "…"] [--lead me]   对话入口（只登记，lead 由你当）
+  mesh start-mission "标题" [--brief "…"]           对话入口：建 mission 并立刻拉起你自己当 lead 干活
   mesh get-mission <M-000001>
 
 ${style.bold('人类命令')}
@@ -209,6 +211,8 @@ async function main(argv: string[]): Promise<number> {
       return cmdMissionLead(parsed, hub)
     case 'create-mission':
       return cmdCreateMission(parsed, hub)
+    case 'start-mission':
+      return cmdStartMission(parsed, hub)
     case 'get-mission':
       return cmdGetMission(parsed, hub)
     case 'plan-mission':

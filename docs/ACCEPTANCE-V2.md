@@ -649,3 +649,112 @@ $ mesh mission export M-000001 --out .mesh-v2-m1\exported
   HISTORY.md 出现两行、`advanceMissions` 用快照里的旧状态推进真实 mission。
 - **D34**：M2 的"打回自动回队"把 mission 级打回的信号洗掉 → 针对性返工被当成整件事重拆
   （状态链 `rejected → planning` 而不是 `rejected → executing`）。观察台把状态链画出来才看见。
+
+---
+
+## M5 · 真实端到端 + 对话入口 — ⚠️ 部分达成
+
+三条真实 agent 席位（dsh-01 / dsh-02 / hermes-01）+ 人类 operator，跑完 4 个真实 mission、
+8 张真实卡片合并；对话入口 `start_mission` 与 `docs/INTEGRATION.md` 已落地。
+
+**必须直说：要求 2 达成（一次真实打回 + 返工）、要求 3 未达成（没有出现第二次打回，换人未被真实触发）。**
+理由见第 5 节，不是平台没实现，而是这两个 agent 没写错。
+
+### 1. 真实参与方（不是 fixture）
+
+`mesh init` 在本机自动探测到，并用 `mesh agents verify` 真实拉起过：
+
+| 席位 | 是什么 | verify 实测 |
+|---|---|---|
+| `dsh-01` | DSH headless（`node D:\AI\DSH\apps\cli\lib\bin.js --profile headless`） | `hello 已到达`，35.1s |
+| `dsh-02` | 第二个 DSH 席位，本 mission 的 lead | `hello 已到达`，43.3s |
+| `hermes-01` | Hermes Agent v0.21.5（`hermes.exe`） | `hello 已到达`，74.8s |
+| `mesh-human` | 人类 operator（我），做 lead / reviewer | — |
+
+探测不到 claude/codex/opencode，它们保持 disabled。`dsh-02` 与 `dsh-01` 是同一个二进制的两个席位
+（不同 agent id、不同能力），**这一点在报告里写明**，不是把同一件事算两遍。
+
+### 2. 真实 mission 与真实合并
+
+`M-000001`（lead = **dsh-02**，真实 agent 自己拆卡/派活/整合/写报告）：
+
+| 卡 | 实现 | 审查 | 合并 |
+|---|---|---|---|
+| T-000001 契约骨架 | hermes-01 | dsh-01 | `682651fa` |
+| T-000002 formatDuration | hermes-01 | dsh-01 | `ae4b1a89` |
+| T-000003 slugify | dsh-01 | hermes-01 | `d068ad02` |
+| T-000004 planBudget | dsh-01 | hermes-01 | `ad5b0e6d` |
+| T-000005 src 入口 + README | dsh-01 | hermes-01 | `7b94582c` |
+
+耗时 44m27s，5/5 合并，`final_verdict` + `write_report` 由 dsh-02 自己完成，
+报告里连「极端情况下金额合计可能溢出」的已知边界都写了。
+
+### 3. 要求 2：一次真实打回 → 返工 → 再审 ✅
+
+`M-000004`（CSV 解析器，lead = mesh-human）。第一版合并（`d2aa483e`）后，我作为 lead 按 **RFC 4180**
+判定不通过——**数据中间的空白行**被当成空行丢弃，而 RFC 4180 里它是一条含单个空字段的记录：
+
+```
+$ node judge-csv-blank.mjs
+middle blank line: "a,b\n\nc,d"
+  parseCsv -> [["a","b"],["c","d"]]
+  RFC4180  -> [["a","b"],[""],["c","d"]]
+
+| 19:57:18 | 打回已合并的卡 | S-000020 | 打回 T-000007：二次验收不通过（RFC4180）… |
+| 19:57:23 | 重新排队 | — | task.requeued |
+| 20:02:21 | 开始审查 | hermes-01 | 开始审查 T-000007 |
+```
+
+系统把卡重新派给 **dsh-01 返工**（commit `8150acc`），返工后我重跑同一张表：
+
+```
+PASS  "a,b\n\n\n" -> [["a","b"]]          ← 尾部空行仍不产生空行（无回归）
+middle blank line: parseCsv -> [["a","b"],[""],["c","d"]]   ← 修好了
+```
+
+11 条原样例 + 未闭合引号全部仍然通过 → 二次验收通过，`M-000004` completed（轮次 1）。
+
+### 4. 要求 3：第二次打回 → 换人 ❌ 未达成
+
+**没有出现第二次打回。** 返工版本没有回归，我找不到第二个真实缺陷，所以没有触发
+`rejection_count >= 2`，也就没有换人。我不会为了凑演示去伪造一次打回。
+
+诚实记录我尝试过的五次（每张卡都用真命令逐条核对，不看提交说明）：
+
+| 卡 | 严格点 | 第一版结果 |
+|---|---|---|
+| T-000003 slugify | 9 条样例表 + 4 类非法输入 | 全过（16 用例） |
+| T-000004 planBudget | 负 savingsRate 保留、income=0 不 NaN | 全过（15 用例） |
+| T-000006 formatBytes | `1 KiB` 不是 `1.0 KiB`、四舍五入 | 全过（54 用例） |
+| T-000007 parseCsv | RFC4180 引号/转义/CRLF | 全过（22 用例）；**只有中间空行语义被我再验收打回** |
+| T-000008 compareSemver | SemVer §11 预发布链逐对 | 全过（24 用例） |
+
+**平台侧的机制是好的**：`rejection_count` / `rejected_by` / `selectAgent` 的排除逻辑有 8 个单测，
+M2 用真实进程（scripted fixture）跑通过一次完整「两次打回 → 换人」。缺的只是**真实 agent 的失败样本**。
+
+### 5. 顺带发现的两个真问题
+
+1. **D36**：lead 敲错命令 `mesh mission .mesh/missions/M-000001.json`，CLI 把它当标题**新建了一个垃圾 mission**，
+   它又被拉起一个真实 lead 回合，吃掉了 dsh-01 的并发额度，真正的 mission 卡了 10 分钟。
+   已修：路径/id 形状的参数直接报错。
+2. **D37**：mission 级打回（`rejectMergedTask`）**不增加** `rejection_count`，只有审查打回才加。
+   这符合 §2.3 的字面，但意味着「lead 打回两次」永远不会触发换人。我没改语义，留给你决定。
+
+### 6. 对话入口（§5.2）
+
+- 工具 `start_mission(title, brief, acceptance?)`：lead 自动取**调用者自己**，建完 mission 立刻
+  拉起 lead 会话（`Scheduler.spawnLeadTurn`），调用者可以就此结束这一轮。
+- CLI 镜像 `mesh start-mission "标题"`；`mesh create-mission` 保留为「只登记」。
+- `docs/INTEGRATION.md`：给 agent 看的指令文本（「只有用户明确要求时才起 mission」+ 工具表 +
+  各 agent 全局指令放哪），可直接贴进 Hermes skill / DSH AGENTS.md / CLAUDE.md / AGENTS.md。
+- 单测 2 条：caller 即 lead + 来源记 `chat`；没有 `lead` 能力的 agent 会被拒。
+
+### 7. 本轮统计
+
+```
+tsc --noEmit        0 errors
+node --test         119 tests / 119 pass / 0 fail
+真实 mission        4 个 completed（M-000001 / 3 / 4 / 5）
+真实卡片合并        8 张，全部 strict scope 终审
+真实打回            1 次（M-000004 T-000007），返工 1 轮
+```

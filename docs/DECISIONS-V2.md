@@ -309,6 +309,45 @@ M4 的观察台把状态链画出来后一眼就看见了：`rejected → planni
 映射表生成——`timeline.md` 和观察台因此不会各写一套中文。前端优先用 `label`，没有时退回 `kind`，
 所以旧数据不会崩。
 
+---
+
+# M5 追加
+
+## D36 · `mesh mission <看起来像路径或 id 的东西>` 现在会报错，而不是建一个垃圾 mission
+
+M5 真跑时发生的：lead 想查看 mission，敲了 `mesh mission .mesh/missions/M-000001.json`。
+`cmdMission` 只判断「第一个参数像不像 `M-000001`」，不像就当标题去**新建** ——
+于是凭空多出一个标题为 `M-000001.json` 的 mission，它又被调度器拉起一个真实的 lead 回合，
+把 dsh-01 的并发额度占满，真正的 mission 因此卡了 10 分钟（T-000001 submitted 但没人能审）。
+
+修法：标题如果含路径分隔符、以 `.json/.md/.ts…` 结尾、或以 `M-/T-/S-` 开头，直接报错并提示
+「要新建请用 `mesh mission \"标题\"`，要查看请用 `mesh mission M-000001`」。
+一个人/agent 的笔误不应该变成一条协作史。
+
+## D37 · 任务级打回不计入 `rejection_count`（**未改动，仅记录**）
+
+M5 想用「lead 二次验收打回」来触发换人，结果发现：`rejectMergedTask`（mission 级打回）
+只把卡置为 `rejected`，**不加** `rejection_count`、也不写 `rejected_by`；
+只有 `recordVerdict(rejected)`（Supervisor 审查打回）才加。
+
+这符合 §2.3 的字面（"`recordVerdict(rejected)` 时 +1"），但和用户对 M5 的期待不一致：
+"打回不过就换更强的" —— 由 lead 发起的打回并不能触发换人。
+
+**我没改**，因为改它等于改 §2.3 的语义，应该由你来定。两个选项：
+1. 让 `rejectMergedTask` 也 +1（并写 `rejected_by`）——"被打回过"就算数，换人规则对两个层级都生效；
+2. 保持现状，换人只由审查打回驱动，mission 级打回只走 rework/replan。
+
+## D38 · M5 没有做出「真实 agent 的第一版被真实打回」（诚实记录）
+
+五次尝试、五张卡（duration / slug / budget / bytes / csv / semver），每张都用真命令逐条核对，
+**第一版全部通过**。所以"验收写严 → 第一版不过"这个前提在 dsh-01 / hermes-01 上没有成立。
+唯一一次真实打回是我作为 lead 在二次验收上按 RFC 4180 判定的中间空行语义（见 M-000004 report），
+返工一次即通过，没有第二次打回，因此换人没有被触发。
+
+这不是平台没实现，而是没被真实触发。想触发它，需要一个真会写错的场景（更弱的小模型、
+更长的链路、或者让 reviewer 用更挑剔的口径）。见 ACCEPTANCE-V2 的 M5 缺口一节。
+
+
 
 
 

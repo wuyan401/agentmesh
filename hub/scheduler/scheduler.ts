@@ -289,6 +289,20 @@ export class Scheduler {
   }
 
   /**
+   * Spawn one lead turn for a mission and return what was launched.
+   *
+   * Public because the chat entry (`start_mission`) wants the lead working *now*, not
+   * on the next tick — the caller ends its own turn immediately after.
+   */
+  spawnLeadTurn(mission: MissionCard, phase: 'planning' | 'integrating', session?: SessionCard): SpawnRecord {
+    const agent = this.hub.store.requireAgent(mission.lead_agent)
+    const lead = session ?? this.hub.missions.createLeadSession(mission.mission_id, { spawned_by: 'hub.scheduler' })
+    return this.launch(lead, agent, null, null, {
+      extraSection: this.hub.missions.leadBrief(mission, phase),
+    })
+  }
+
+  /**
    * Spawn the lead turn for a mission that needs one: `intake` (plan it) or
    * `integrating` (integrate + second acceptance + report).
    *
@@ -317,11 +331,7 @@ export class Scheduler {
         continue
       }
       try {
-        const session = this.hub.missions.createLeadSession(mission.mission_id, { spawned_by: 'hub.scheduler' })
-        const record = this.launch(session, agent, null, null, {
-          extraSection: this.hub.missions.leadBrief(mission, phase),
-        })
-        report.missions.leads.push(record)
+        report.missions.leads.push(this.spawnLeadTurn(mission, phase))
       } catch (e) {
         report.skipped.push({
           task_id: null,

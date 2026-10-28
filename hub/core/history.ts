@@ -145,15 +145,22 @@ export class MissionHistory {
    */
   timelineEvents(mission: MissionCard): TimelineEvent[] {
     const out: TimelineEvent[] = []
-    const seen = new Set<string>()
+    // Some actions are written to both ledgers (a mission-level rejection writes
+    // task.rejected_after_merge to the board AND the audit log). Their timestamps can
+    // differ by a millisecond, so de-duplicate on identity + a small time window
+    // rather than on the exact timestamp.
+    const seen = new Map<string, number>()
+    const DEDUPE_WINDOW_MS = 2000
     const push = (event: Record<string, unknown>, source: 'audit' | 'board'): void => {
       const kind = String(event['event'] ?? '')
       const at = String(event['at'] ?? '')
+      const atMs = Date.parse(at) || 0
       const taskId = typeof event['task_id'] === 'string' ? event['task_id'] : null
-      // The ledgers overlap for a few kinds; keep the first (audit wins).
-      const key = `${at}|${kind}|${taskId ?? ''}`
-      if (seen.has(key)) return
-      seen.add(key)
+      const text = describe(event)
+      const key = `${kind}|${taskId ?? ''}|${text}`
+      const previous = seen.get(key)
+      if (previous !== undefined && Math.abs(previous - atMs) <= DEDUPE_WINDOW_MS) return
+      seen.set(key, atMs)
       out.push({
         at,
         kind,
@@ -172,7 +179,7 @@ export class MissionHistory {
                     : typeof event['agent_id'] === 'string'
                       ? event['agent_id']
                       : null,
-        text: describe(event),
+        text,
         task_id: taskId,
         session_id: typeof event['session_id'] === 'string' ? event['session_id'] : null,
         source,
