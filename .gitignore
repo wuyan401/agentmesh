@@ -1,6 +1,7 @@
 node_modules/
 .mesh/
 .tools/
+.tmp/
 *.log
 .DS_Store
 spike/node_modules/
