@@ -1,23 +1,31 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AgentMesh 环境前提自检脚本（三条）。
+    AgentMesh 环境前提自检脚本（四条）。
 
 .DESCRIPTION
-    对应 docs/ENVIRONMENT.md 记录的三条 worker 环境前提，逐条检查，任一不满足即
+    对应 docs/ENVIRONMENT.md 记录的 worker 环境前提，逐条检查，任一不满足即
     打印 FAIL 并以非 0 退出；全部满足打印 PASS 并以 0 退出。
 
-      1. D:\AI\DSH\profiles 存在，且 icacls 含 Low Mandatory Level
-         （worker 是 Low 完整性进程，要写的 profile 目录必须是 Low）
-      2. 共享 node 仍是 Medium Mandatory Level
+      1. DSH seat 目录存在：$DSH_HOME/profiles/<seat>，未设 DSH_HOME 时是
+         ~/.dsh/profiles/<seat>（见 packages/util/home-paths/lib/index.js）
+      2. dsh-01 的卡片是 file-protocol
+         （MCP 通道下 hub 的 submit 找不到 git，会 spawnSync ENOENT）
+      3. 共享 node 仍是 Medium Mandatory Level
          （不能为了 worker 把全机共享的 node 降成 Low，那是给全机埋雷）
-      3. 项目目录 icacls 含 HP: 且权限为 (F) 或 (M)
+      4. 项目目录 icacls 含 HP: 且权限为 (F) 或 (M)
          （worker 的受限令牌要能从 ACL 拿到写权）
 
     退出码：0 = 全部通过；1 = 至少一条不满足。
 
-.PARAMETER ProfilesDir
-    DSH profiles 目录。默认 D:\AI\DSH\profiles。
+.PARAMETER Seat
+    DSH seat 名。默认 headless（对应 dsh 卡片的 --profile headless）。
+
+.PARAMETER DshHome
+    DSH home。默认取 $env:DSH_HOME；未设则用 ~/.dsh。
+
+.PARAMETER OfficeAgent
+    要检查注入方式的 agent id。默认 dsh-01。
 
 .PARAMETER NodeExe
     共享 node 的路径。默认 D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe。
@@ -39,13 +47,22 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ProfilesDir = 'D:\AI\DSH\profiles',
+    [string]$Seat = 'headless',
+    [string]$DshHome = $env:DSH_HOME,
+    [string]$OfficeAgent = 'dsh-01',
     [string]$NodeExe = $(if ($env:MESH_SHARED_NODE) { $env:MESH_SHARED_NODE } else { 'D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe' }),
     [string]$ProjectDir = ''
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Continue'
+
+# DSH home resolution mirrors packages/util/home-paths/lib/index.js:
+# an explicit $DSH_HOME wins, otherwise it is <homedir>/.dsh.
+if (-not $DshHome) {
+    $DshHome = Join-Path $HOME '.dsh'
+}
+$SeatDir = Join-Path (Join-Path $DshHome 'profiles') $Seat
 
 # $PSScriptRoot is not reliably populated while parameter defaults are evaluated
 # (Windows PowerShell 5.1 + -File), so resolve the project root here instead.
@@ -149,29 +166,76 @@ function Write-Check {
 }
 
 # ---------------------------------------------------------------------------
-# 1. DSH profiles 目录：存在 + Low Mandatory Level
+# 1. DSH seat 目录：<DSH_HOME 或 ~/.dsh>/profiles/<seat>
+#
+# 这里**不**检查 D:\AI\DSH\profiles：那个路径既不是 CLI 的 home，DSH 也从没往
+# 里写过。CLI（node apps/cli/lib/bin.js --profile <seat>）的 home 由
+# packages/util/home-paths 解析：$DSH_HOME 优先，未设则 ~/.dsh。
 # ---------------------------------------------------------------------------
-$profilesExists = $false
+$seatExists = $false
 try {
-    $profilesExists = Test-Path -LiteralPath $ProfilesDir -PathType Container -ErrorAction Stop
+    $seatExists = Test-Path -LiteralPath $SeatDir -PathType Container -ErrorAction Stop
 } catch {
-    $profilesExists = $false
+    $seatExists = $false
 }
 
-if (-not $profilesExists) {
-    Write-Check '1/3' 'DSH profiles (Low)' $false @(
-        "路径: $ProfilesDir",
-        '目录不存在或不可访问（去 docs/ENVIRONMENT.md §1 看修法）'
+$cordisPath = Join-Path $SeatDir 'cordis.yml'
+$cordisExists = Test-Path -LiteralPath $cordisPath -PathType Leaf -ErrorAction SilentlyContinue
+$homeNote = if ($env:DSH_HOME) { "`$env:DSH_HOME=$env:DSH_HOME" } else { 'DSH_HOME 未设 → 回退到 ~/.dsh' }
+
+if (-not $seatExists) {
+    Write-Check '1/4' 'DSH seat dir' $false @(
+        "路径: $SeatDir",
+        $homeNote,
+        '目录不存在：确认 dsh 卡片里的 --profile 名与 -Seat 一致'
+    )
+} elseif (-not $cordisExists) {
+    Write-Check '1/4' 'DSH seat dir' $false @(
+        "路径: $SeatDir",
+        $homeNote,
+        'cordis.yml 不存在：DSH 还没在这个 home 里写过 profile（跑一次该 seat 即可生成）'
     )
 } else {
-    $r = Invoke-Icacls -Path $ProfilesDir
-    $label = Get-MandatoryLabel -Text $r.Text
-    $ok = $r.Ok -and ($label -eq 'Low Mandatory Level')
-    Write-Check '1/3' 'DSH profiles (Low)' $ok @(
-        "路径: $ProfilesDir",
-        ("实际: " + $(if ($r.Ok) { if ($label) { $label } else { '(无显式标签)' } } else { 'icacls 执行失败: ' + $r.Text.Trim() }))
+    $cordisAt = (Get-Item -LiteralPath $cordisPath).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')
+    Write-Check '1/4' 'DSH seat dir' $true @(
+        "路径: $SeatDir",
+        $homeNote,
+        "cordis.yml: $cordisAt"
     )
 }
+
+# ---------------------------------------------------------------------------
+# 2. dsh-01 卡片必须是 file-protocol
+#
+# MCP 通道下平台生成的 dsh-hub.patch.yml 只给 hub MCP server 三个环境变量、没有
+# PATH；hub.submit 内部 spawnSync('git') 因此 ENOENT，卡永远提交不上去。改用
+# file-protocol 后 worker 走 `mesh submit`（在它自己的 shell 里，PATH 有 git）。
+# ---------------------------------------------------------------------------
+$cardPath = Join-Path (Join-Path (Join-Path $ProjectDir '.mesh') 'agents') "$OfficeAgent.json"
+$cardInject = $null
+$cardError = $null
+try {
+    if (-not (Test-Path -LiteralPath $cardPath -PathType Leaf)) {
+        $cardError = "卡片不存在: $cardPath"
+    } else {
+        $card = Get-Content -LiteralPath $cardPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $cardInject = [string]$card.mcp_inject
+    }
+} catch {
+    $cardError = $_.Exception.Message
+}
+
+if ($cardError) {
+    Write-Check '2/4' 'dsh agent channel' $false @($cardError)
+} else {
+    $ok = ($cardInject -eq 'file-protocol')
+    Write-Check '2/4' 'dsh agent channel' $ok @(
+        "卡片: .mesh/agents/$OfficeAgent.json",
+        "mcp_inject: $cardInject",
+        '要求: file-protocol（dsh-patch 会让 hub 的 submit 找不到 git）'
+    )
+}
+
 
 # ---------------------------------------------------------------------------
 # 2. 共享 node：必须是 Medium Mandatory Level
@@ -198,7 +262,7 @@ if (-not $nodeExists) {
     } else {
         $detail += '文件不存在；不要为了 worker 把它降成 Low（见 docs/ENVIRONMENT.md §2）'
     }
-    Write-Check '2/3' 'shared node (Medium)' $false $detail
+    Write-Check '3/4' 'shared node (Medium)' $false $detail
 } else {
     $r = Invoke-Icacls -Path $NodeExe
     $label = Get-MandatoryLabel -Text $r.Text
@@ -206,7 +270,7 @@ if (-not $nodeExists) {
     if (-not $r.Ok) {
         # Cannot read the security descriptor. That is not proof of Medium, so
         # this is a FAIL (fail closed), with the reason spelled out.
-        Write-Check '2/3' 'shared node (Medium)' $false @(
+        Write-Check '3/4' 'shared node (Medium)' $false @(
             "路径: $NodeExe",
             ('icacls 失败: ' + $r.Text.Trim()),
             '无法验证完整性标签（fail closed）：请在普通 PowerShell 里复跑本脚本'
@@ -217,7 +281,7 @@ if (-not $nodeExists) {
         # downgrade would always show up as an explicit `Low Mandatory Level`.
         $effective = if ($label) { $label } else { 'Medium Mandatory Level (继承)' }
         $ok = ($label -eq 'Medium Mandatory Level') -or (-not $label)
-        Write-Check '2/3' 'shared node (Medium)' $ok @(
+        Write-Check '3/4' 'shared node (Medium)' $ok @(
             "路径: $NodeExe",
             "实际: $effective"
         )
@@ -235,14 +299,14 @@ try {
 }
 
 if (-not $projectExists) {
-    Write-Check '3/3' 'project dir (HP F/M)' $false @(
+    Write-Check '4/4' 'project dir (HP F/M)' $false @(
         "路径: $ProjectDir",
         '目录不存在或不可访问'
     )
 } else {
     $r = Invoke-Icacls -Path $ProjectDir
     if (-not $r.Ok) {
-        Write-Check '3/3' 'project dir (HP F/M)' $false @(
+        Write-Check '4/4' 'project dir (HP F/M)' $false @(
             "路径: $ProjectDir",
             ('icacls 失败: ' + $r.Text.Trim())
         )
@@ -255,7 +319,7 @@ if (-not $projectExists) {
             }
         }
         $shown = if ($aces.Count -gt 0) { ($aces | ForEach-Object { $_.Line }) -join '; ' } else { '(没有 HP 的 ACE)' }
-        Write-Check '3/3' 'project dir (HP F/M)' $strong @(
+        Write-Check '4/4' 'project dir (HP F/M)' $strong @(
             "路径: $ProjectDir",
             "HP ACE: $shown",
             '要求: HP 的权限为 (F) 或 (M)'
