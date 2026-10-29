@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { initMesh, renderInitReport } from '../hub/core/init.ts'
 import { HubApi } from '../hub/core/api.ts'
 import { MeshError, MESH_ERRORS } from '../hub/core/errors.ts'
+import { resolveGitBinary } from '../hub/core/git.ts'
 import { loadConfig, patchConfig } from '../hub/core/config.ts'
 import { Scheduler } from '../hub/scheduler/scheduler.ts'
 import { Hub } from '../hub/core/hub.ts'
@@ -175,7 +176,7 @@ export function cmdDoctor(parsed: ParsedArgs): number {
   const [major = 0, minor = 0] = process.versions.node.split('.').map((n) => Number(n))
   push('node >= 22.6 (native TS + node:sqlite)', major > 22 || (major === 22 && minor >= 6), `node ${process.versions.node}`)
 
-  const gitVersion = spawnSync('git', ['--version'], { encoding: 'utf8', windowsHide: true })
+  const gitVersion = spawnSync(resolveGitBinary(), ['--version'], { encoding: 'utf8', windowsHide: true })
   push('git available', gitVersion.status === 0, (gitVersion.stdout ?? '').trim() || 'not found')
 
   const hub = tryHub()

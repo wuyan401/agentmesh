@@ -36,6 +36,56 @@ const PLATFORM_IDENTITY = [
   'commit.gpgsign=false',
 ]
 
+/**
+ * Resolve the git binary once, preferring PATH but never *requiring* it.
+ *
+ * A bare `spawnSync('git')` needs PATH. That is fine for the hub and for
+ * file-protocol workers (they run their own shell), but NOT for the stdio MCP
+ * server that a DSH patch spawns: its env is pinned to the variables the patch
+ * lists, so it inherits no PATH at all, `git` is ENOENT, and every `submit`
+ * fails while the worker itself looks perfectly healthy. Probing a couple of
+ * known absolute locations costs one spawn and removes the whole class of
+ * "works in the shell, fails over MCP" failures.
+ */
+let gitBinaryCache: string | null = null
+
+function gitCandidates(): string[] {
+  const out: string[] = []
+  const override = process.env['MESH_GIT_EXE']
+  if (override) out.push(override)
+  if (process.platform === 'win32') {
+    out.push(
+      'D:\\AI\\Hermes\\tools\\git-2.53.0+3-win32-x64\\cmd\\git.exe',
+      'C:\\Program Files\\Git\\cmd\\git.exe',
+    )
+  }
+  return out
+}
+
+function runs(binary: string): boolean {
+  const probe = spawnSync(binary, ['--version'], { encoding: 'utf8', windowsHide: true })
+  return !probe.error && probe.status === 0
+}
+
+export function resolveGitBinary(): string {
+  if (gitBinaryCache) return gitBinaryCache
+  if (runs('git')) {
+    gitBinaryCache = 'git'
+    return gitBinaryCache
+  }
+  for (const candidate of gitCandidates()) {
+    if (!fs.existsSync(candidate)) continue
+    if (runs(candidate)) {
+      gitBinaryCache = candidate
+      return candidate
+    }
+  }
+  // Nothing worked: keep the bare name so the surfaced error still names what
+  // is missing instead of pointing at a path nobody installed.
+  gitBinaryCache = 'git'
+  return gitBinaryCache
+}
+
 export class Git {
   readonly root: string
 
@@ -48,7 +98,7 @@ export class Git {
   }
 
   run(args: string[], opts: GitOptions = {}): GitRunResult {
-    const res = spawnSync('git', args, {
+    const res = spawnSync(resolveGitBinary(), args, {
       cwd: opts.cwd ?? this.root,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,

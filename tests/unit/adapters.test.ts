@@ -50,6 +50,13 @@ test('adapter dsh: hub is injected as an MCP server via a per-session --patch ov
     assert.match(yaml, /@deepseek-ai\/dsh-mcp-client/)
     assert.match(yaml, new RegExp(ctx.session.session_id))
     assert.match(yaml, /failOnStartupError: true/)
+    // The patch's env block IS the MCP server's entire environment — it inherits
+    // nothing else. Without PATH the server cannot resolve `git`, so `hub.submit`
+    // dies with ENOENT while the worker itself looks healthy.
+    assert.match(yaml, /^\s+PATH: /m, 'MCP server env must carry PATH')
+    if (process.platform === 'win32') {
+      assert.match(yaml, /^\s+SystemRoot: /m, 'MCP server env must carry SystemRoot on Windows')
+    }
     // C2/C4: nothing in the launch recipe may restrict tools.
     for (const forbidden of ['allowedTools', 'disallowedTools', 'tool_policy', 'tools_deny', 'deny:']) {
       assert.ok(!yaml.includes(forbidden), `launch recipe must not contain ${forbidden}`)

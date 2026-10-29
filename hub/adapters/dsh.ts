@@ -12,7 +12,34 @@ import path from 'node:path'
 import { buildChildEnv, hubMcpServerPath, quote } from './types.ts'
 import type { Adapter, SpawnContext, SpawnPlan } from './types.ts'
 
-export function dshPatchYaml(ctx: SpawnContext): string {
+/**
+ * Variables a stdio child actually needs on this platform.
+ *
+ * The generated patch's `env:` block *is* the MCP server's entire environment —
+ * DSH gives the child nothing else. Leaving these out is what made
+ * `hub.submit` fail with `spawnSync git ENOENT` over the MCP channel while the
+ * worker itself looked healthy: git needs PATH, and on Windows the CRT needs
+ * SystemRoot to resolve DLLs.
+ */
+const PASS_THROUGH_ENV = [
+  'PATH',
+  'PATHEXT',
+  'COMSPEC',
+  'SystemRoot',
+  'SystemDrive',
+  'windir',
+  'TEMP',
+  'TMP',
+  'USERPROFILE',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROCESSOR_ARCHITECTURE',
+  'NUMBER_OF_PROCESSORS',
+] as const
+
+export function dshPatchYaml(ctx: SpawnContext, childEnv?: Record<string, string>): string {
   const server = hubMcpServerPath()
   const root = ctx.hub.paths.root
   const lines: string[] = []
@@ -34,6 +61,21 @@ export function dshPatchYaml(ctx: SpawnContext): string {
   lines.push(`          MESH_ROOT: ${quote(root.replace(/\\/g, '/'))}`)
   lines.push(`          MESH_SESSION_ID: ${quote(ctx.session.session_id)}`)
   lines.push(`          MESH_AGENT_ID: ${quote(ctx.agent.agent_id)}`)
+  // childEnv wins where it has the key (notably PATH, which is worker-specific),
+  // and the hub's own process env fills the rest. buildChildEnv strips some
+  // identity variables for safety, but SystemRoot/COMSPEC are infrastructure the
+  // CRT needs to load anything at all — they must survive.
+  //
+  // Spreading process.env into a plain object loses the Windows proxy's
+  // case-insensitivity: the keys land as SYSTEMROOT/COMSPEC while we look up
+  // SystemRoot. Pick case-insensitively, emit the canonical spelling.
+  const source: Record<string, string | undefined> = { ...process.env, ...(childEnv ?? {}) }
+  const pick = (key: string): string | undefined =>
+    source[key] ?? source[key.toUpperCase()] ?? source[key.toLowerCase()] ?? process.env[key]
+  for (const key of PASS_THROUGH_ENV) {
+    const value = pick(key)
+    if (value) lines.push(`          ${key}: ${quote(value)}`)
+  }
   lines.push('        toolCallTimeoutMs: 60000')
   lines.push('        failOnStartupError: true')
   return `${lines.join('\n')}\n`
@@ -42,9 +84,13 @@ export function dshPatchYaml(ctx: SpawnContext): string {
 export const dshAdapter: Adapter = {
   name: 'dsh',
   build(ctx: SpawnContext): SpawnPlan {
+    // Compute the env once: the patch's env block has to agree with what the
+    // worker process itself gets, or the MCP server and the worker's shell
+    // would resolve different git/node binaries.
+    const childEnv = buildChildEnv(ctx)
     const patchFile = path.join(ctx.scratch, 'dsh-hub.patch.yml')
     fs.mkdirSync(ctx.scratch, { recursive: true })
-    fs.writeFileSync(patchFile, dshPatchYaml(ctx))
+    fs.writeFileSync(patchFile, dshPatchYaml(ctx, childEnv))
 
     const args = [...ctx.agent.args, '--patch', patchFile, ...ctx.agent.headless_args]
     if (ctx.agent.prompt_mode === 'arg') {
@@ -55,7 +101,7 @@ export const dshAdapter: Adapter = {
       command: ctx.agent.command,
       args,
       cwd: ctx.worktree,
-      env: buildChildEnv(ctx),
+      env: childEnv,
       artifacts: [patchFile],
       injection: `MCP server "hub" appended via --patch ${path.basename(patchFile)} (profile untouched)`,
     }
