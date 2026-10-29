@@ -829,6 +829,80 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--ink); }
 .cfgrow .cv { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); text-align: right; overflow-wrap: anywhere; max-width: 56%; flex: 0 1 auto; }
 
 /* --- toast / help -------------------------------------------------------- */
+/* 发布任务面板：和 help 同一套「纸面」语言（hairline + 等宽标签 + 编号），
+   只是宽一点、带表单。颜色只取既有 token，不新开一套。 */
+.sheet {
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--panel); color: var(--ink);
+  padding: 0; width: min(640px, calc(100vw - 24px));
+  max-height: min(86dvh, 720px); overflow: auto;
+}
+.sheet::backdrop { background: rgba(0, 0, 0, .55); }
+.sheet-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  padding: 11px 14px 10px; border-bottom: 1px solid var(--line); background: var(--bg-2);
+  position: sticky; top: 0; z-index: 1;
+}
+.sheet-kicker { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em; color: var(--ink-4); text-transform: uppercase; }
+.sheet-head h2 { font-size: 14.5px; font-weight: 650; line-height: 1.35; }
+.sheet-form { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px; }
+.sheet-form[hidden], .sheet-result[hidden] { display: none; }
+
+.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fld-label {
+  display: flex; align-items: baseline; gap: 6px;
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-3);
+}
+.fld-label .n { color: var(--ink-4); }
+.fld-tag {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .04em; color: var(--ink-4);
+  border: 1px solid var(--line-soft); border-radius: 1px; padding: 0 4px;
+}
+.fld-input {
+  width: 100%; padding: 6px 8px;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font-family: inherit; font-size: 12.5px; line-height: 1.55;
+}
+.fld-input:hover { border-color: var(--line-strong); }
+.fld-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 0; border-color: var(--line-strong); }
+.fld-input[aria-invalid="true"] { border-color: var(--s-rejected); }
+textarea.fld-area { min-height: 66px; resize: vertical; }
+.fld-hint { font-size: 11px; color: var(--ink-4); line-height: 1.6; }
+
+.crit-rows { display: flex; flex-direction: column; gap: 5px; }
+.crit-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 24px; gap: 6px; align-items: center; }
+.crit-n { font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); }
+.crit-del { width: 24px; height: 24px; color: var(--ink-4); }
+.crit-del:hover { color: var(--s-rejected); }
+.crit-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.sheet-msg {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--s-rejected) 45%, var(--line));
+  background: color-mix(in srgb, var(--s-rejected) 8%, transparent);
+}
+.sheet-msg:empty { display: none; }
+.sheet-msg .msg-strong { font-size: 12px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.sheet-msg .msg-hint { font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+
+.sheet-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding-top: 10px; border-top: 1px dashed var(--line-soft);
+}
+.sheet-btns { display: flex; align-items: center; gap: 8px; }
+/* 唯一的强调色不是新颜色：把 --ink 当底、--bg 当字，跟导航当前项同一套反色 */
+.btn-ink { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+.btn-ink:hover { background: var(--ink-2); border-color: var(--ink-2); color: var(--bg); }
+.btn-ink:disabled { background: var(--ink-3); border-color: var(--ink-3); color: var(--bg); }
+
+.sheet-result { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.sheet-result:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.nm-ok-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.nm-ok-id { font-size: 13px; color: var(--ink); }
+.nm-ok-kv { margin-top: 2px; }
+
 .toast {
   position: fixed; left: 50%; bottom: 18px; transform: translate(-50%, 12px);
   z-index: 80; max-width: min(92vw, 560px);
@@ -1141,6 +1215,15 @@ button.mfile-report:hover { color: var(--ink); border-color: var(--line-strong);
   /* 页内跳转条在手机上只留三段标题：带计数会横向滚出半截数字，看起来像坏了。
      计数在各个分区标题右侧还在。 */
   .mnav-btn .cnt { display: none; }
+  /* 发布面板在手机上铺满：字段一列、按钮不换行、底部按钮贴底更好点 */
+  .sheet { width: calc(100vw - 12px); max-height: 92dvh; padding-bottom: env(safe-area-inset-bottom); }
+  .sheet-head { padding: 10px 11px 9px; }
+  .sheet-form { padding: 10px 11px 12px; gap: 11px; }
+  .sheet-result { padding: 10px 11px 12px; }
+  .sheet-foot { flex-direction: column-reverse; align-items: stretch; }
+  .sheet-btns { justify-content: flex-end; }
+  .sheet-foot > .micro { text-align: right; }
+  .crit-row { grid-template-columns: 18px minmax(0, 1fr) 24px; }
 }
 
 @media (max-width: 1099px) {

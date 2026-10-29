@@ -1,11 +1,16 @@
 /**
- * Read-only observability server (`mesh serve`).
+ * Observability server (`mesh serve`).
  *
- * A JSON API plus static assets. Deliberately read-only: the platform's write
- * surface stays in the CLI and in the agent toolbelt, so nobody can change
- * platform state from a browser tab and dodge the audit trail. What this gives you
- * is the thing a team actually needs — the ability to *see* the board, the
- * sessions, the message bus and the audit log at a glance.
+ * A JSON API plus static assets. Almost entirely read-only on purpose: the platform's
+ * write surface lives in the CLI and in the agent toolbelt, so nobody can change
+ * platform state from a browser tab and dodge the audit trail. What this gives you is
+ * the thing a team actually needs — the ability to *see* the board, the sessions, the
+ * message bus and the audit log at a glance.
+ *
+ * One deliberate exception (V2 §5): `POST /api/missions`. Publishing a mission is the
+ * same first-class action as `mesh mission`, attributed the same way (a mesh-human
+ * session, `source: platform`); the endpoint creates the mission and its lead session
+ * and returns immediately, leaving the planning turn to the daemon.
  */
 
 import http from 'node:http'
@@ -16,6 +21,9 @@ import { scopeCheck } from '../core/mergeGate.ts'
 import { PROTOCOL_QUICKREF } from '../core/protocol.ts'
 import { loadConfig } from '../core/config.ts'
 import { isProcessAlive } from '../core/lock.ts'
+import { MeshError, MESH_ERRORS } from '../core/errors.ts'
+import { humanIdentity } from '../../cli/human.ts'
+import { Scheduler } from '../scheduler/scheduler.ts'
 import type { Hub } from '../core/hub.ts'
 import type { TaskCard } from '../core/types.ts'
 
@@ -52,10 +60,176 @@ function taskView(hub: Hub, task: TaskCard) {
     ...task,
     history: task.history.slice(-12),
     review_records: reviews,
-    sessions: sessions.map((s) => ({ session_id: s.session_id, agent_id: s.agent_id, role: s.role, status: s.status })),
+    sessions: sessions.map((s) => ({
+      // Same shape as /api/sessions. This endpoint used to send a stripped
+      // {session_id, agent_id, role, status}, so the detail views — which share one
+      // renderer with the sessions page — printed "no heartbeat / no task" wherever the
+      // extra fields were missing.
+      session_id: s.session_id,
+      agent_id: s.agent_id,
+      role: s.role,
+      task: s.task,
+      status: s.status,
+      lifespan: s.lifespan,
+      spawned_by: s.spawned_by,
+      pid: s.pid,
+      created_at: s.created_at,
+      last_heartbeat_at: s.last_heartbeat_at,
+      is_lead: s.is_lead,
+      mission: s.mission,
+      turns: s.turns,
+      exit: s.exit,
+    })),
     scope_check: scope
       ? { ok: scope.ok, out_of_scope: scope.out_of_scope, files: scope.files, checked: true }
       : { ok: true, out_of_scope: [], files: [], checked: false },
+  }
+}
+
+const MISSION_BODY_LIMIT = 64 * 1024
+
+function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let size = 0
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > MISSION_BODY_LIMIT) {
+        reject(new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'request body too large', { limit_bytes: MISSION_BODY_LIMIT }))
+        req.destroy()
+        return
+      }
+      chunks.push(chunk)
+    })
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8').trim()
+      if (!raw) return resolve({})
+      try {
+        resolve(JSON.parse(raw))
+      } catch {
+        reject(new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'body must be valid JSON'))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+interface WebMissionInput {
+  title: string
+  brief: string
+  acceptance: string[]
+  lead_agent: string | null
+}
+
+/**
+ * Validate the publish payload.
+ *
+ * Deliberately mirrors `mesh mission "…"` rather than inventing a second vocabulary:
+ * title is the positional there, brief falls back to it, acceptance repeats.
+ */
+function normalizeMissionBody(body: unknown): WebMissionInput {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'body must be a JSON object', {
+      hint: 'POST {"title": "…", "brief": "…", "acceptance": ["…"], "lead_agent": "dsh-01"}',
+    })
+  }
+  const b = body as Record<string, unknown>
+  const title = typeof b.title === 'string' ? b.title.trim() : ''
+  if (!title) {
+    throw new MeshError(MESH_ERRORS.SCHEMA_INVALID, 'title is required', {
+      field: 'title',
+      hint: '给任务起个名字：{"title": "做什么"}',
+    })
+  }
+  const briefRaw = typeof b.brief === 'string' ? b.brief.trim() : ''
+  const brief = briefRaw || title
+
+  let acceptance: string[] = []
+  if (Array.isArray(b.acceptance)) {
+    acceptance = b.acceptance.filter((x): x is string => typeof x === 'string').map((x) => x.trim()).filter(Boolean)
+  } else if (typeof b.acceptance === 'string') {
+    acceptance = b.acceptance.split('\n').map((x) => x.trim()).filter(Boolean)
+  }
+
+  const leadRaw = typeof b.lead_agent === 'string' ? b.lead_agent.trim() : ''
+  return { title, brief, acceptance, lead_agent: leadRaw || null }
+}
+
+/**
+ * `POST /api/missions` — publish a mission from the dashboard.
+ *
+ * Same three steps as the CLI entry (`createAndStart`): act as the human operator,
+ * create the mission with `source: platform`, then open a real lead session when the
+ * lead is an agent. The planning turn itself is *not* awaited here — that is the
+ * CLI's synchronous driver and would time an HTTP request out; `mesh up` advances it.
+ */
+async function publishMission(hub: Hub, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  const sendJson = (status: number, value: unknown): void => {
+    res.writeHead(status, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+    })
+    res.end(JSON.stringify(value))
+  }
+  try {
+    const input = normalizeMissionBody(await readJsonBody(req))
+    const { identity, session_id } = humanIdentity(hub, 'planner')
+    const mission = hub.missions.createMission(
+      {
+        title: input.title,
+        brief: input.brief,
+        acceptance: input.acceptance,
+        lead_agent: input.lead_agent,
+        source: 'platform',
+      },
+      identity,
+    )
+    const leadAgent = hub.store.requireAgent(mission.lead_agent)
+    let leadSessionId: string | null = null
+    let leadTurn = 'not_applicable'
+    // A builtin lead (the human / the kernel) is not spawned: there is no process to start.
+    if (leadAgent.kind !== 'builtin') {
+      const session = hub.missions.createLeadSession(mission.mission_id, { spawned_by: 'web.mission' })
+      leadSessionId = session.session_id
+      // Spawn the planning turn on *this* session, not "some session later".
+      //
+      // The daemon's dispatchLeadTurns() always makes a fresh session for a mission
+      // that still needs a lead, so leaving it to the daemon would hand the mission a
+      // different session id than the one we just returned to the browser — the UI
+      // would then point at a session that never runs. spawnLeadTurn() only launches
+      // the process (it does not wait for the turn), which is exactly the CLI's
+      // behaviour without the blocking wait. If it fails, the mission stays `intake`
+      // and the daemon retries on its own.
+      try {
+        new Scheduler(hub).spawnLeadTurn(mission, 'planning', session)
+        leadTurn = 'spawned'
+      } catch (e) {
+        leadTurn = `deferred: ${e instanceof MeshError ? String(e.code) : (e as Error).message}`
+      }
+    }
+    sendJson(201, {
+      mission_id: mission.mission_id,
+      lead_session_id: leadSessionId,
+      lead_turn: leadTurn,
+      status: mission.status,
+      lead_agent: mission.lead_agent,
+      source: mission.source,
+      created_by: session_id,
+    })
+  } catch (e) {
+    if (e instanceof MeshError) {
+      const code = String(e.code)
+      const badInput = code === MESH_ERRORS.SCHEMA_INVALID || code === MESH_ERRORS.CAPABILITY_MISSING || code === MESH_ERRORS.ROLE_FORBIDDEN
+      sendJson(badInput ? 400 : 500, {
+        error: badInput ? 'invalid_mission' : 'mission_failed',
+        code,
+        message: e.message,
+        ...e.detail,
+      })
+      return
+    }
+    sendJson(500, { error: 'mission_failed', message: (e as Error).message })
   }
 }
 
@@ -108,17 +282,43 @@ export function startServer(opts: ServerOptions): Promise<{ server: http.Server;
           lifespan: s.lifespan,
           sandbox: s.sandbox,
         })),
-        agents: hub.store.listAgents().map((a) => ({
-          agent_id: a.agent_id,
-          display_name: a.display_name,
-          kind: a.kind,
-          enabled: a.enabled,
-          capabilities: a.capabilities,
-          concurrency: a.concurrency,
-          transport: a.transport,
-          mcp_inject: a.mcp_inject,
-          notes: a.notes,
-        })),
+        agents: hub.store.listAgents().map((a) => {
+          // The profile is what the platform actually scores on: nine dimensions, the
+          // manual lock, and the peer reviews other agents wrote. All of it already
+          // exists on disk — the dashboard just never surfaced it.
+          let profile: unknown = null
+          try {
+            profile = hub.profiles.view(a.agent_id)
+          } catch {
+            profile = null
+          }
+          return {
+            agent_id: a.agent_id,
+            display_name: a.display_name,
+            kind: a.kind,
+            enabled: a.enabled,
+            capabilities: a.capabilities,
+            concurrency: a.concurrency,
+            transport: a.transport,
+            mcp_inject: a.mcp_inject,
+            notes: a.notes,
+            profile,
+            dimensions: (() => {
+              try {
+                return hub.profiles.dimensionValues(a.agent_id)
+              } catch {
+                return []
+              }
+            })(),
+            success_rate: (() => {
+              try {
+                return hub.profiles.successRate(a.agent_id)
+              } catch {
+                return null
+              }
+            })(),
+          }
+        }),
         counts_by_role: hub.store.listTasks().reduce<Record<string, number>>((acc, t) => {
           acc[t.role] = (acc[t.role] ?? 0) + 1
           return acc
@@ -256,6 +456,18 @@ export function startServer(opts: ServerOptions): Promise<{ server: http.Server;
   const server = http.createServer((req, res) => {
     try {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? `${host}:${port}`}`)
+      if (url.pathname === '/api/missions' && req.method === 'POST') {
+        void publishMission(hub, req, res)
+        return
+      }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        sendJson(res, 405, {
+          error: 'method_not_allowed',
+          method: req.method,
+          hint: '观察台只读，唯一的写入口是 POST /api/missions',
+        })
+        return
+      }
       route(url, res)
     } catch (e) {
       sendJson(res, 500, { error: (e as Error).message })

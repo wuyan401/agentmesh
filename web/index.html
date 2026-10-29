@@ -182,12 +182,68 @@
     <div><dt><kbd class="kbd">←</kbd> <kbd class="kbd">→</kbd></dt><dd>切换详情面板页签</dd></div>
     <div><dt><kbd class="kbd">?</kbd></dt><dd>本帮助</dd></div>
   </dl>
-  <p class="help-note">观察台是只读的：所有写操作走 CLI 与 agent 工具，浏览器里不提供。</p>
+  <p class="help-note">观察台基本只读：唯一的写入口是任务单页的「发布任务」（<code>POST /api/missions</code>，等同 <code>mesh mission</code>）。其余改写仍走 CLI 与 agent 工具，浏览器里不提供。</p>
 </dialog>
 
 <noscript>
   <p class="noscript">这个观察台需要 JavaScript 才能渲染 API 数据。</p>
 </noscript>
+
+<!-- 发布任务：观察台唯一的写入口（POST /api/missions）。
+     字段顺序照着 CLI 的位置参数排：标题 → 描述 → 验收（可多条）→ lead。
+     用原生 <dialog>：Esc、焦点圈、backdrop 都是浏览器给的，不自己造一套。 -->
+<dialog class="sheet" id="new-mission" aria-labelledby="nm-heading">
+  <div class="sheet-head">
+    <div>
+      <div class="sheet-kicker">发布任务</div>
+      <h2 id="nm-heading">写一件要平台去做的活</h2>
+    </div>
+    <button class="icon-btn" type="button" data-act="nm-close" aria-label="关闭发布面板（Esc）">
+      <svg class="ico" aria-hidden="true"><use href="#i-x" /></svg>
+    </button>
+  </div>
+
+  <form class="sheet-form" id="nm-form" novalidate>
+    <div class="fld">
+      <label class="fld-label" for="nm-title"><span class="n">01</span>标题<span class="fld-tag">必填</span></label>
+      <input class="fld-input" id="nm-title" name="title" type="text" autocomplete="off" spellcheck="false" aria-describedby="nm-title-hint" />
+      <p class="fld-hint" id="nm-title-hint">一句话说清要做什么。它会成为 mission 的名字，也进协作史。</p>
+    </div>
+
+    <div class="fld">
+      <label class="fld-label" for="nm-brief"><span class="n">02</span>描述<span class="fld-tag">可空</span></label>
+      <textarea class="fld-input fld-area" id="nm-brief" name="brief" rows="3" aria-describedby="nm-brief-hint"></textarea>
+      <p class="fld-hint" id="nm-brief-hint">留空则平台用标题代替。</p>
+    </div>
+
+    <div class="fld">
+      <div class="fld-label" id="nm-crit-legend"><span class="n">03</span>验收条款<span class="fld-tag">可多条 · 空行忽略</span></div>
+      <div class="crit-rows" id="nm-crit-rows" role="group" aria-labelledby="nm-crit-legend"></div>
+      <div class="crit-foot">
+        <button class="btn" type="button" data-act="nm-add-crit">添加一条</button>
+        <span class="micro" id="nm-crit-count"></span>
+      </div>
+    </div>
+
+    <div class="fld">
+      <label class="fld-label" for="nm-lead"><span class="n">04</span>lead<span class="fld-tag">可选</span></label>
+      <select class="fld-input" id="nm-lead" name="lead_agent" aria-describedby="nm-lead-hint"></select>
+      <p class="fld-hint" id="nm-lead-hint">只列「启用 + 有 lead 能力 + 非 builtin」的 agent；builtin（mesh-human / mesh-hub）不落 lead 会话。</p>
+    </div>
+
+    <div class="sheet-msg" id="nm-msg" role="alert"></div>
+
+    <div class="sheet-foot">
+      <span class="micro">Ctrl / ⌘ + Enter 提交</span>
+      <span class="sheet-btns">
+        <button class="btn" type="button" data-act="nm-close">取消</button>
+        <button class="btn btn-ink" type="submit" id="nm-submit">发布任务</button>
+      </span>
+    </div>
+  </form>
+
+  <div class="sheet-result" id="nm-result" tabindex="-1" role="status" aria-live="polite" hidden></div>
+</dialog>
 
 <script type="module" src="./app.js"></script>
 </body>

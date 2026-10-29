@@ -1973,13 +1973,17 @@ function renderMissionList() {
 
   const head = `<div class="view-head">
     <div class="view-title"><h1>任务单</h1><span class="count">${list.length} / ${all.length} 件事</span></div>
-    <div class="view-tools"><span class="micro">新的在上面 · 一次 mission = 一组任务卡 + 一份报告</span></div>
+    <div class="view-tools">
+      <span class="micro">新的在上面 · 一次 mission = 一组任务卡 + 一份报告</span>
+      <button class="btn btn-ink" type="button" id="btn-new-mission" data-act="new-mission" title="发布一件新任务（等同 mesh mission）">发布任务</button>
+    </div>
   </div>`;
 
   if (!all.length) {
     return `${head}${emptyState(
       '还没有 mission',
-      '平台收到一件活之后（mesh mission start，或 lead 会话里调用 create_mission），这里会出现一条记录：拆了几张卡、谁审的、报告在哪。',
+      '平台收到一件活之后（点上面的「发布任务」，或 mesh mission，或 lead 会话里调用 create_mission），这里会出现一条记录：拆了几张卡、谁审的、报告在哪。',
+      '<div class="empty-actions"><button class="btn btn-ink" type="button" data-act="new-mission">发布第一件任务</button></div>',
     )}${missionHistoryFoot()}`;
   }
   if (!list.length) {
@@ -2376,6 +2380,272 @@ function renderMissionDetail() {
   return `${crumb}${hero}${nav}${missionTimelineBlock(d, idx)}${missionCardsBlock(d)}${missionReportBlock(d, m)}`;
 }
 
+/* --- 发布任务（POST /api/missions）----------------------------------------
+   观察台只读，只有一个例外：把一件活发进平台。这条链和 CLI 的 `mesh mission`
+   是同一个动作（平台侧记在一个 mesh-human 会话名下、source=platform），
+   所以字段也照着 CLI 的位置参数排：标题 → 描述 → 验收（可多条）→ lead。
+   面板用原生 <dialog>：Esc、焦点圈、backdrop 都是浏览器给的，不自己造一套。 */
+
+let nmTimer = 0;
+/** 刚发布成功的那单：结果块里的「现在就打开」用它跳转。 */
+let nmLastId = '';
+
+function nmEl(id) { return document.getElementById(id); }
+
+/** 能当 lead 的 agent：启用 + 有 lead 能力 + 非 builtin。
+ *  builtin（mesh-human / mesh-hub）没有进程可拉起，平台会给它们 lead_session_id=null。 */
+function nmLeadCandidates() {
+  const agents = (store.overview && store.overview.agents) || [];
+  return agents.filter((a) => a.enabled && a.kind !== 'builtin' && (a.capabilities || []).includes('lead'));
+}
+
+function nmAddCritRow(value = '') {
+  const host = nmEl('nm-crit-rows');
+  if (!host) return;
+  const row = document.createElement('div');
+  row.className = 'crit-row';
+  row.innerHTML = '<span class="crit-n" aria-hidden="true"></span>' +
+    '<input class="fld-input crit-input" type="text" autocomplete="off" spellcheck="false" />' +
+    '<button class="icon-btn crit-del" type="button" data-act="nm-del-crit" aria-label="删除这条验收条款">' +
+    '<svg class="ico" aria-hidden="true"><use href="#i-x" /></svg></button>';
+  row.querySelector('input').value = value;
+  host.appendChild(row);
+  nmRenumberCrit();
+  return row;
+}
+
+/** 行号与 aria-label 都跟着顺序走，删掉中间一条也不会错位。 */
+function nmRenumberCrit() {
+  const rows = Array.from((nmEl('nm-crit-rows') || { children: [] }).children);
+  rows.forEach((row, i) => {
+    const n = row.querySelector('.crit-n');
+    if (n) n.textContent = pad2(i + 1);
+    const input = row.querySelector('input');
+    if (input) input.setAttribute('aria-label', `验收条款 ${i + 1}`);
+    const del = row.querySelector('.crit-del');
+    if (del) del.setAttribute('aria-label', `删除第 ${i + 1} 条验收条款`);
+  });
+  const count = nmEl('nm-crit-count');
+  if (count) count.textContent = rows.length ? `${rows.length} 条 · 空行提交时忽略` : '还没有条款（可以不加）';
+}
+
+function nmFillLeads() {
+  const sel = nmEl('nm-lead');
+  if (!sel) return;
+  const cands = nmLeadCandidates();
+  sel.innerHTML = '<option value="">交给平台挑（不指定 lead）</option>' +
+    cands.map((a) => `<option value="${esc(a.agent_id)}">${esc(a.agent_id)} · ${esc(a.display_name || '未命名')}</option>`).join('') +
+    (cands.length ? '' : '<option value="" disabled>（当前没有可指定的 lead：都停用 / 无 lead 能力 / 是 builtin）</option>');
+  sel.value = '';
+  if (!store.overview) {
+    // 还有一次机会：overview 没加载就先开面板，拿到数据再填一次下拉。
+    loaders.overview().then(() => { if (nmEl('new-mission').open) nmFillLeads(); }).catch(() => {});
+  }
+}
+
+/** 面板里的提示行：空字符串就收起（:empty 在 CSS 里 display:none）。 */
+function nmSetMsg(strong, hint = '') {
+  const box = nmEl('nm-msg');
+  if (!box) return;
+  box.innerHTML = hasText(strong)
+    ? `<span class="msg-strong">${esc(strong)}</span>${hasText(hint) ? `<span class="msg-hint">${esc(hint)}</span>` : ''}`
+    : '';
+}
+
+function nmSetBusy(on) {
+  const btn = nmEl('nm-submit');
+  if (!btn) return;
+  btn.disabled = !!on;
+  btn.textContent = on ? '发布中…' : '发布任务';
+}
+
+const NM_EMPTY = { hidden: true, innerHTML: '' };
+
+function openNewMission() {
+  const dlg = nmEl('new-mission');
+  if (!dlg) return;
+  clearTimeout(nmTimer);
+  const form = nmEl('nm-form');
+  const result = nmEl('nm-result');
+  if (form) form.hidden = false;
+  if (result) Object.assign(result, NM_EMPTY);
+  nmSetMsg('');
+  nmSetBusy(false);
+  const title = nmEl('nm-title');
+  if (title) { title.value = ''; title.removeAttribute('aria-invalid'); }
+  const brief = nmEl('nm-brief');
+  if (brief) brief.value = '';
+  const rows = nmEl('nm-crit-rows');
+  if (rows) rows.innerHTML = '';
+  nmAddCritRow();
+  nmFillLeads();
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.setAttribute('open', '');
+  if (title) { title.focus(); title.select(); }
+}
+
+function closeNewMission() {
+  const dlg = nmEl('new-mission');
+  if (!dlg) return;
+  clearTimeout(nmTimer);
+  if (dlg.open && typeof dlg.close === 'function') dlg.close();
+  else dlg.removeAttribute('open');
+}
+
+/** 成功之后：把三个返回值摆出来，1.6 秒后自动跳到这单（也可以点「现在就打开」）。 */
+function nmShowResult(p) {
+  const result = nmEl('nm-result');
+  const form = nmEl('nm-form');
+  if (!result) return;
+  const session = p.lead_session_id == null
+    ? none('无（builtin 不落会话）', 'lead 是 builtin：没有进程可拉起，所以 lead_session_id 为 null')
+    : `<span class="mono">${esc(p.lead_session_id)}</span>`;
+  const turn = String(p.lead_turn || '');
+  const turnHtml = !turn
+    ? none('未返回', 'lead_turn 为空')
+    : turn === 'spawned'
+      ? '<span class="mono">spawned</span> <span class="dim2">lead 回合已拉起</span>'
+      : turn === 'not_applicable'
+        ? '<span class="mono">not_applicable</span> <span class="dim2">builtin lead 不需要拉进程</span>'
+        : turn.startsWith('deferred')
+          ? `<span class="mono">deferred</span> <span class="dim2">未同步拉起，交给 daemon 再试${turn.length > 9 ? ` · ${esc(turn.slice(9).trim())}` : ''}</span>`
+          : `<span class="mono">${esc(turn)}</span>`;
+  result.innerHTML = `
+    <div class="nm-ok-head">
+      <span class="pill st-merged"><i class="dotmark" aria-hidden="true"></i>已发布</span>
+      <span class="mono nm-ok-id">${esc(p.mission_id)}</span>
+      <span class="micro">${esc(p.source || 'platform')}${p.created_by ? ` · 署名 ${esc(p.created_by)}` : ''}</span>
+    </div>
+    <dl class="kv nm-ok-kv">
+      <dt>mission_id</dt><dd class="mono">${esc(p.mission_id)}</dd>
+      <dt>lead_agent</dt><dd>${hasText(p.lead_agent) ? `<span class="mono">${esc(p.lead_agent)}</span>` : none('未返回', 'lead_agent 为空')}</dd>
+      <dt>lead_session</dt><dd>${session}</dd>
+      <dt>lead_turn</dt><dd>${turnHtml}</dd>
+      <dt>status</dt><dd>${statusPill(p.status)}</dd>
+    </dl>
+    <div class="sheet-foot">
+      <span class="micro">正在打开 <span class="mono">${esc(p.mission_id)}</span>…</span>
+      <span class="sheet-btns"><button class="btn btn-ink" type="button" data-act="nm-jump">现在就打开</button></span>
+    </div>`;
+  nmLastId = p.mission_id;
+  if (form) form.hidden = true;
+  result.hidden = false;
+  if (result.focus) result.focus({ preventScroll: true });
+  // 列表 / 会话 / 总览都变了：全部作废，回到列表时重新拉。
+  store.missions = null;
+  store.sessions = null;
+  store.overview = null;
+  store.missionDetail.delete(p.mission_id);
+  ['missions', 'sessions', 'overview'].forEach((k) => store.errors.delete(k));
+  clearTimeout(nmTimer);
+  nmTimer = setTimeout(() => nmJump(p.mission_id), 1600);
+}
+
+function nmJump(id) {
+  clearTimeout(nmTimer);
+  closeNewMission();
+  go('missions', { mission: id });
+}
+
+/** 把后端 400/500 的响应翻成面板里的一句话，不用 alert。 */
+function nmFail(status, payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const code = hasText(p.code) ? p.code : '';
+  if (status === 400) {
+    const bits = [];
+    if (hasText(p.hint)) bits.push(p.hint);
+    if (hasText(p.agent_id)) bits.push(`agent ${p.agent_id}${Array.isArray(p.capabilities) ? `：能力 ${p.capabilities.join(' / ')}` : ''}`);
+    if (code) bits.push(`错误码 ${code}`);
+    nmSetMsg(p.message || '平台拒绝了这次请求', bits.join(' · '));
+    const title = nmEl('nm-title');
+    if (p.field === 'title' && title) {
+      title.setAttribute('aria-invalid', 'true');
+      title.focus();
+      title.select();
+    }
+    return;
+  }
+  if (status === 405 || status === 404) {
+    nmSetMsg('这个 serve 实例不接受发布', `HTTP ${status}：它可能是发布路由之前的旧版本（只读观察台）。重启 mesh serve 后就能用。`);
+    return;
+  }
+  nmSetMsg('发布失败', `HTTP ${status}${hasText(p.message) ? ` · ${p.message}` : ''}${code ? ` · ${code}` : ''}。服务端内部错误，平台里可能什么都没建；重试前先确认一下。`);
+}
+
+async function submitNewMission(ev) {
+  if (ev) ev.preventDefault();
+  const form = nmEl('nm-form');
+  if (!form || form.hidden) return;
+  const btn = nmEl('nm-submit');
+  if (btn && btn.disabled) return;
+
+  const title = nmEl('nm-title');
+  const body = { title: title ? title.value.trim() : '' };
+  const brief = nmEl('nm-brief');
+  const briefVal = brief ? brief.value.trim() : '';
+  if (briefVal) body.brief = briefVal;
+  const acceptance = Array.from((nmEl('nm-crit-rows') || { children: [] }).children)
+    .map((row) => (row.querySelector('input') || {}).value || '')
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  if (acceptance.length) body.acceptance = acceptance;
+  const lead = nmEl('nm-lead');
+  if (lead && lead.value) body.lead_agent = lead.value;
+
+  nmSetMsg('');
+  if (title) title.removeAttribute('aria-invalid');
+  nmSetBusy(true);
+  try {
+    const res = await fetch('/api/missions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=utf-8', accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+    let payload = null;
+    try { payload = await res.json(); } catch { payload = null; }
+    if (!res.ok) { nmFail(res.status, payload); nmSetBusy(false); return; }
+    // 只有真拿到 mission_id 才算发布成功：旧版 serve 会把 POST 落到 GET 上，
+    // 回来一份任务单列表（HTTP 200）—— 那时候假装成功并跳转会跳到空页面。
+    if (!payload || !hasText(payload.mission_id)) {
+      nmSetMsg('服务端没有返回 mission_id', `HTTP ${res.status}：这个 serve 实例可能还没有 POST /api/missions 路由（旧进程）。任务是否已创建未知，先刷新任务单看看。`);
+      nmSetBusy(false);
+      store.missions = null;
+      store.errors.delete('missions');
+      return;
+    }
+    nmShowResult(payload);
+  } catch (e) {
+    nmSetMsg('连不上后端', `${e.message} · 确认 mesh serve 还在跑，以及页面与 API 同源。`);
+    nmSetBusy(false);
+  }
+}
+
+/** 面板的一次性绑定：提交、Ctrl/⌘+Enter、关闭后把焦点还给入口按钮。 */
+function nmBind() {
+  const dlg = nmEl('new-mission');
+  const form = nmEl('nm-form');
+  if (!dlg || !form) return;
+  form.addEventListener('submit', submitNewMission);
+  dlg.addEventListener('keydown', (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') {
+      ev.preventDefault();
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else submitNewMission(null);
+    }
+  });
+  dlg.addEventListener('close', () => {
+    clearTimeout(nmTimer);
+    nmSetBusy(false);
+    const trigger = nmEl('btn-new-mission');
+    if (trigger && trigger.focus) trigger.focus({ preventScroll: true });
+  });
+  // 输入就把上一次的报错收掉，别让红框一直挂着
+  form.addEventListener('input', (ev) => {
+    if (ev.target && ev.target.id === 'nm-title') ev.target.removeAttribute('aria-invalid');
+    if (nmEl('nm-msg') && nmEl('nm-msg').innerHTML) nmSetMsg('');
+  });
+}
+
 /* --- 渲染主循环 ----------------------------------------------------------- */
 let lastView = '';
 let lastTab = '';
@@ -2668,6 +2938,28 @@ function bind() {
         }
       }
       if (ui.logFor) loadLog(ui.logFor).then(() => render({ reset: false })).catch(() => {});
+    } else if (act === 'new-mission') {
+      openNewMission();
+    } else if (act === 'nm-close') {
+      closeNewMission();
+    } else if (act === 'nm-add-crit') {
+      const row = nmAddCritRow();
+      if (row) { const i = row.querySelector('input'); if (i) i.focus(); }
+    } else if (act === 'nm-del-crit') {
+      const row = el.closest('.crit-row');
+      const host = nmEl('nm-crit-rows');
+      const focusAt = host ? Array.from(host.children).indexOf(row) : -1;
+      if (row && host) row.remove();
+      nmRenumberCrit();
+      // 删完把焦点交给邻近那一行的输入框，键盘用户不会掉到 body 上
+      if (host && focusAt >= 0) {
+        const next = host.children[Math.min(focusAt, host.children.length - 1)];
+        const input = next ? next.querySelector('input') : null;
+        if (input) input.focus();
+        else { const add = document.querySelector('[data-act="nm-add-crit"]'); if (add) add.focus(); }
+      }
+    } else if (act === 'nm-jump') {
+      if (nmLastId) nmJump(nmLastId);
     } else if (act === 'help') {
       openHelp();
     } else if (act === 'close-help') {
@@ -2743,7 +3035,7 @@ function bind() {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
 
     if (ev.key === 'Escape') {
-      if (document.querySelector('.help[open]')) return; // 交给 dialog
+      if (document.querySelector('dialog[open]')) return; // 交给 dialog 自己关（Esc / cancel）
       if (ui.task) { ev.preventDefault(); update({ task: '' }, { reset: false }); return; }
       if (ui.status || ui.role || ui.q) {
         update({ status: '', role: '', q: '' }, { reset: false });
@@ -2752,6 +3044,8 @@ function bind() {
       if (typing && t.blur) t.blur();
       return;
     }
+    // 对话框开着的时候，其余快捷键（/ ? g …）一律不接管：模态就该是模态。
+    if (document.querySelector('dialog[open]')) return;
     if (typing) return;
 
     if (ev.key === '/') {
@@ -2808,6 +3102,7 @@ function boot() {
 
   if (!location.hash) history.replaceState(null, '', '#/board');
   bind();
+  nmBind();
   render({ reset: true });
   connectStream();
 
