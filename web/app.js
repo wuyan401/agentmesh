@@ -1112,7 +1112,7 @@ function renderSubmissionTab(task) {
 
 function sessionRow(s, current) {
   const a = age(s.last_heartbeat_at);
-  return `<div class="sess-row st-${esc(s.status)}" style="${current ? 'background:var(--raised)' : ''}">
+  return `<div class="sess-row st-${esc(s.status)}" data-row-s="${esc(s.session_id)}" style="${current ? 'background:var(--raised)' : ''}">
     <div>
       <div class="sess-id">${esc(s.session_id)} <span class="mono dim2">${esc(s.agent_id || '')}</span></div>
       <div class="sess-sub">
@@ -1196,6 +1196,12 @@ function renderPanel() {
   const panel = $('#panel');
   const ws = $('#workspace');
   if (!panel || !ws) return;
+  // 面板每次都是整块重建（panel.innerHTML = …），旧 #panel-body 连同滚动位置一起没了。
+  // render() 里虽然会复原一次，但 renderPanel() 也会被异步加载单独调用（loadLog /
+  // loadContext 的 .then），那条路径没人复原，于是点「日志」展开后面板跳回顶部。
+  // 所以复原要落在 renderPanel() 自己身上：谁重建，谁负责把位置还回去。
+  const prevBody = $('#panel-body');
+  const prevScroll = prevBody ? prevBody.scrollTop : 0;
   if (!ui.task) {
     panel.hidden = true;
     panel.innerHTML = '';
@@ -1223,6 +1229,10 @@ function renderPanel() {
 
   panel.innerHTML = panelShell(task) +
     `<div class="panel-body" id="panel-body" role="tabpanel" tabindex="0" aria-labelledby="tab-${ui.tab}">${body}</div>`;
+
+  // 把位置还回去（内容变高时浏览器会自己夹住，不会越界）。
+  const nextBody = $('#panel-body');
+  if (nextBody && prevScroll > 0) nextBody.scrollTop = prevScroll;
 
   // 按需拉取（错误态由 errorBlock 呈现，避免无限重试）
   const ctxKey = `ctx:${task.task_id}`;
@@ -2036,8 +2046,13 @@ function render(opts = {}) {
               : renderAgents();
 
   const scroller = $('#view-scroll');
+  // innerHTML 会先把 #view 清空再重建，浏览器在清空的瞬间会把 #view-scroll 的
+  // scrollTop 夹回 0；重建后不会自己回来。所以重绘前记下位置，原地重绘时复原
+  // —— 否则点一次「日志」展开就把人送回页面顶部。
+  const viewScroll = scroller ? scroller.scrollTop : 0;
   host.innerHTML = html;
   if (view !== lastView || reset) scroller.scrollTop = 0;
+  else if (scroller) scroller.scrollTop = viewScroll;
 
   renderPanel();
   const newPanelBody = $('#panel-body');
@@ -2261,8 +2276,22 @@ function bind() {
       render({ reset: false });
       loadLog(el.dataset.s).then(() => render({ reset: false })).catch(() => render({ reset: false }));
     } else if (act === 'open-log') {
-      ui.logFor = ui.logFor === el.dataset.s ? '' : el.dataset.s;
+      // 展开日志会让面板内容变高/变矮（上一条日志收起），只还原 scrollTop 不够：
+      // 内容一变，同一段文字就在视口里挪了位置。所以以「被点的那一行」为锚，
+      // 重绘后把它挪回原来的视口位置 —— 用户眼睛不动，页面就不算跳。
+      const sid = el.dataset.s;
+      const row = el.closest('.sess-row');
+      const beforeTop = row ? row.getBoundingClientRect().top : null;
+      ui.logFor = ui.logFor === sid ? '' : sid;
       render({ reset: false });
+      const nb = $('#panel-body');
+      if (nb && beforeTop != null) {
+        const anchor = nb.querySelector(`[data-row-s="${sid}"]`);
+        if (anchor) {
+          const delta = anchor.getBoundingClientRect().top - beforeTop;
+          if (Math.abs(delta) > 1) nb.scrollTop += delta;
+        }
+      }
       if (ui.logFor) loadLog(ui.logFor).then(() => render({ reset: false })).catch(() => {});
     } else if (act === 'help') {
       openHelp();
