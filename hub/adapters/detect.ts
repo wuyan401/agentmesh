@@ -78,11 +78,15 @@ export function findDshBin(ctx: DetectContext): string | null {
   return null
 }
 
-function findHermes(ctx: DetectContext): string | null {
-  const fromEnv = ctx.env.MESH_HERMES_BIN
-  if (fromEnv && fileExists(fromEnv)) return fromEnv
-  const direct = which('hermes')
-  if (direct) return direct
+/**
+ * Absolute `hermes.exe` from a Hermes venv, if one is installed.
+ *
+ * Preferred over a PATH shim on purpose: `bin/hermes.cmd` is launched through
+ * cmd.exe, whose command line is capped at 8191 characters. A spawn prompt is ~9 KB,
+ * so a `.cmd` seat dies with `spawn EINVAL` the moment it gets a real card (seen in
+ * production: the first worker dispatch after onboarding). The `.exe` has no such cap.
+ */
+function probeHermesVenv(ctx: DetectContext): string | null {
   for (const root of ctx.probeRoots) {
     const installs = path.join(root, 'Hermes', 'installs')
     if (!fs.existsSync(installs)) continue
@@ -98,6 +102,24 @@ function findHermes(ctx: DetectContext): string | null {
     } catch {
       /* unreadable install dir */
     }
+  }
+  return null
+}
+
+function findHermes(ctx: DetectContext): string | null {
+  const fromEnv = ctx.env.MESH_HERMES_BIN
+  if (fromEnv && fileExists(fromEnv)) return fromEnv
+  // Order matters: an absolute .exe first, the PATH shim only as a fallback.
+  const fromVenv = probeHermesVenv(ctx)
+  if (fromVenv) return fromVenv
+  const direct = which('hermes')
+  if (direct) {
+    // A .cmd/.bat on PATH cannot carry a long prompt; look for the real binary beside it.
+    if (/\.(cmd|bat)$/i.test(direct)) {
+      const sibling = direct.replace(/\.(cmd|bat)$/i, '.exe')
+      if (fileExists(sibling)) return sibling
+    }
+    return direct
   }
   return null
 }
