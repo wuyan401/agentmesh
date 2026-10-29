@@ -291,13 +291,37 @@ function shortText(text, limit = 460) {
   return { text: cut.replace(/[\s，、,;；]+$/, '') + '…', more: true };
 }
 
-/** 可展开的长文本块（evidence / 提交说明 / 消息正文）。 */
-function longText(text, cls = 'evidence') {
+/** 可展开的长文本块（evidence / 提交说明 / 消息正文 / 画像维度）。
+ *  limit 可由调用方给：窄格子（九维画像）截得比正文早，但展开的是同一份全文。 */
+function longText(text, cls = 'evidence', limit = 460) {
   const s = String(text == null ? '' : text);
   if (!s.trim()) return `<p class="${cls} dim2">（无内容）</p>`;
-  const t = shortText(s);
+  const t = shortText(s, limit);
   return `<p class="${cls}" data-short="${esc(t.text)}" data-full="${esc(s)}">${esc(t.text)}</p>
     ${t.more ? `<button class="evidence-toggle" type="button" data-act="expand">展开全文 · ${s.length} 字符</button>` : ''}`;
+}
+
+/* --- 空值条款 -------------------------------------------------------------
+   这个界面的规矩：空不是空白，也不是 undefined。
+   任何「后端没给这一项」的位置都写一句人话，并把原因留在 title 里 ——
+   空格子让人以为界面坏了，一句「无 / 还没有 / 未填（字段为空）」才是实话。 */
+function hasText(v) { return v != null && String(v).trim() !== ''; }
+function none(word = '无', why = '') {
+  return `<span class="none"${why ? ` title="${attr(why)}"` : ''}>${esc(word)}</span>`;
+}
+/** 数组 → 渲染；空数组也走 none()，绝不吐出一段空 HTML。 */
+function listOrNone(arr, render, word = '无', why = '') {
+  const list = (Array.isArray(arr) ? arr : []).filter((x) => hasText(x));
+  return list.length ? render(list) : none(word, why);
+}
+/** 代码路径清单（scope 写/读、文件列表）：等宽小片，长路径可断行。 */
+function codeChips(arr) {
+  return (Array.isArray(arr) ? arr : []).map((f) => `<span class="mono codechip">${esc(f)}</span>`).join('');
+}
+function lineCount(s) {
+  const t = String(s == null ? '' : s);
+  if (!t) return 0;
+  return t.replace(/\r\n?/g, '\n').split('\n').length;
 }
 
 /** 卡片上的「判词」：这张卡此刻发生了什么、平台裁了什么。 */
@@ -946,9 +970,16 @@ function panelShell(task) {
     </div>
     <h2 class="panel-title">${esc(task.title)}</h2>
     <div class="panel-meta">
-      <span><span class="micro">role</span> <span class="mono">${esc(task.role)}</span></span>
-      <span><span class="micro">by</span> <span class="mono">${esc(task.created_by || '—')}</span></span>
-      <span><span class="micro">更新</span> <span title="${esc(abs(task.updated_at))}">${esc(rel(task.updated_at))}</span></span>
+      <span><span class="micro">role</span> <span class="mono">${esc(task.role || '—')}</span></span>
+      <span><span class="micro">实现者</span> ${hasText(task.implementer_agent)
+        ? `<span class="mono">${esc(task.implementer_agent)}</span>`
+        : none('未记录', 'implementer_agent 为空：这张卡还没被谁领取并实现')}</span>
+      <span><span class="micro">认领</span> ${hasText(task.claimed_by)
+        ? `<span class="mono" title="${attr(`claimed_by = ${task.claimed_by}`)}">${esc(task.claimed_by)}</span>`
+        : none('无', 'claimed_by 为空')}</span>
+      ${Number(task.rejection_count) ? `<span class="tag-broken">打回 ${esc(String(task.rejection_count))} 次</span>` : ''}
+      <span><span class="micro">开卡</span> <span class="mono">${esc(task.created_by || '—')}</span></span>
+      <span><span class="micro">更新</span> <span title="${attr(abs(task.updated_at))}">${esc(rel(task.updated_at))}</span></span>
       <span><span class="micro">context</span> <span class="mono">${esc(task.context_level || '—')}</span></span>
       <span><span class="micro">estimate</span> <span class="mono">${esc(task.estimate || '—')}</span></span>
     </div>
@@ -1044,17 +1075,30 @@ function renderVerdictTab(task) {
   const reviewNotes = latest ? `
     <div class="sec-head" style="margin-top:14px"><h3 class="sec-title"><span class="n">04</span>审查记录</h3>
       <span class="sec-note">${reviews.length} 条 · 最新 ${esc(latest.review_id)}</span></div>
-    ${reviews.map((r) => `<div style="padding:8px 0;border-top:1px solid var(--line-soft)">
+    ${reviews.map((r) => {
+    const crits = (r.criteria || []).map(critOf);
+    const passN = crits.filter((c) => c.ok === true).length;
+    const failN = crits.filter((c) => c.ok === false).length;
+    return `<div style="padding:8px 0;border-top:1px solid var(--line-soft)">
       <div class="chain-verdict" style="margin:0 0 5px">
-        <span class="verdict" style="color:${r.verdict === 'approved' ? 'var(--s-merged)' : 'var(--s-rejected)'}">${esc(r.verdict)}</span>
-        <span class="mono">${esc(r.review_id)}</span>
-        <span>审查者 ${esc(r.reviewer_agent || '—')} / ${esc(r.reviewer_session || '—')}</span>
-        <span>实现者 ${esc(r.implementer_agent || '—')}</span>
-        <span>${r.independent ? '独立' : '非独立'}</span>
+        <span class="verdict" style="color:${r.verdict === 'approved' ? 'var(--s-merged)' : 'var(--s-rejected)'}">${esc(r.verdict || '无结论')}</span>
+        <span class="mono">${esc(r.review_id || '—')}</span>
+        <span>审查者 <span class="mono">${esc(r.reviewer_agent || '—')}</span> / ${esc(r.reviewer_session || '—')}</span>
+        <span>审的是 <span class="mono">${esc(r.implementer_agent || '—')}</span> 的提交</span>
+        <span>${crits.length ? `${crits.length} 条 criteria · ${passN} PASS / ${failN} FAIL` : none('无逐条 criteria', '这次审查只给了判词，没有留下逐条 criteria')}</span>
+        <span>${r.independent ? '独立审查' : '非独立（自审）'}</span>
         <span>strip 合并 ${r.allow_strip_merge ? '允许' : '不允许'}</span>
+        <span title="${attr(abs(r.at))}">${esc(mmdd(r.at))}</span>
       </div>
+      ${crits.length ? `<ul class="crit-sum">${crits.map((c) => `<li data-pass="${c.ok === true ? 'true' : c.ok === false ? 'false' : 'null'}"><span class="glyph" aria-hidden="true">${c.ok === true ? '✓' : c.ok === false ? '✕' : '?'}</span><span>${esc(c.text || '（条款文字为空）')}</span></li>`).join('')}</ul>` : ''}
       ${evidenceBlock(r.notes, 'notes')}
-    </div>`).join('')}` : '';
+    </div>`;
+  }).join('')}` : '';
+
+  // 打回：`rejected_by` 记的是「被打回时这张卡的实现者」（调度器据此在重派时避开他），
+  // `rejection_count` 是这张卡被打回的次数。两样都是真字段，空也要说清楚。
+  const rejCount = Number(task.rejection_count) || 0;
+  const rejectedBy = Array.isArray(task.rejected_by) ? task.rejected_by.filter(hasText) : [];
 
   return `
   <section class="sec">
@@ -1064,14 +1108,27 @@ function renderVerdictTab(task) {
     ${extraHtml}
   </section>
   <section class="sec">
+    <div class="sec-head"><h3 class="sec-title"><span class="n">01b</span>打回记录</h3>
+      <span class="sec-note">${rejCount ? `被打回 ${esc(String(rejCount))} 次` : '一次都没被打回'}</span></div>
+    ${kv([
+      ['打回次数', rejCount ? `<strong style="color:var(--s-rejected)">${esc(String(rejCount))}</strong>` : none('0 次 · 无打回', 'rejection_count = 0')],
+      ['被打回的实现者', rejectedBy.length
+        ? rejectedBy.map((a) => `<span class="mono">${esc(a)}</span>`).join('<br />')
+        : none('无', 'rejected_by 为空：这张卡没有因打回而换过人')],
+      ['说明', '<span style="font-size:11px;color:var(--ink-3)">被打回时记下当时的实现者，平台重派时会避开他（reassign_after_rejections）。</span>'],
+    ])}
+  </section>
+  <section class="sec">
     <div class="sec-head"><h3 class="sec-title"><span class="n">02</span>scope 终审</h3>${scPill}</div>
     <p style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">${esc(scNote)}</p>
     ${kv([
-      ['越界文件', (sc.out_of_scope || []).length ? (sc.out_of_scope || []).map((f) => `<span class="mono" style="color:var(--s-rejected)">${esc(f)}</span>`).join('<br />') : '无'],
-      ['复核文件', (sc.files || []).length ? (sc.files || []).map((f) => `<span class="mono">${esc(f)}</span>`).join('<br />') : '—'],
-      ['write scope', (task.scope && task.scope.write && task.scope.write.length) ? task.scope.write.map((f) => `<span class="mono">${esc(f)}</span>`).join('<br />') : '—'],
-      ['read scope', (task.scope && task.scope.read && task.scope.read.length) ? task.scope.read.map((f) => `<span class="mono">${esc(f)}</span>`).join('<br />') : '—'],
+      ['越界文件', (sc.out_of_scope || []).length ? (sc.out_of_scope || []).map((f) => `<span class="mono" style="color:var(--s-rejected)">${esc(f)}</span>`).join('<br />') : none('无', 'out_of_scope 为空')],
+      ['复核文件', (sc.files || []).length ? (sc.files || []).map((f) => `<span class="mono">${esc(f)}</span>`).join('<br />') : none('未复核', 'scope_check.files 为空（卡片还没提交或分支已清理）')],
     ])}
+    <div class="scope-pair">
+      <div class="scope-row"><span class="micro">写 scope</span><span class="scope-vals">${listOrNone(task.scope && task.scope.write, codeChips, '无（这张卡不授权写任何文件）', 'scope.write 为空')}</span></div>
+      <div class="scope-row"><span class="micro">读 scope</span><span class="scope-vals">${listOrNone(task.scope && task.scope.read, codeChips, '无（没有声明额外只读文件）', 'scope.read 为空')}</span></div>
+    </div>
   </section>
   <section class="sec">
     <div class="sec-head"><h3 class="sec-title"><span class="n">03</span>合并裁决</h3>
@@ -1083,45 +1140,93 @@ function renderVerdictTab(task) {
 
 function renderSubmissionTab(task) {
   const sub = task.submission;
+  const write = Array.isArray(task.scope && task.scope.write) ? task.scope.write : [];
+  const read = Array.isArray(task.scope && task.scope.read) ? task.scope.read : [];
+  const scopeBlock = `<section class="sec">
+    <div class="sec-head"><h3 class="sec-title"><span class="n">02</span>本卡授权范围</h3>
+      <span class="sec-note">写 ${write.length} 路径 · 读 ${read.length} 路径</span></div>
+    <div class="scope-pair">
+      <div class="scope-row"><span class="micro">写 scope</span><span class="scope-vals">${listOrNone(write, codeChips, '无（这张卡不授权写任何文件）', 'scope.write 为空')}</span></div>
+      <div class="scope-row"><span class="micro">读 scope</span><span class="scope-vals">${listOrNone(read, codeChips, '无（没有声明额外只读文件）', 'scope.read 为空')}</span></div>
+    </div>
+  </section>`;
+
   if (!sub) {
-    return `<section class="sec"><div class="sec-head"><h3 class="sec-title"><span class="n">01</span>提交</h3></div>
-      <p class="dim">还没有提交。agent 在沙箱里 commit 到 <span class="mono">${esc(task.branch || '—')}</span> 后调用 <span class="mono">hub.submit</span>，这里才会出现提交内容。</p></section>`;
+    return `<section class="sec"><div class="sec-head"><h3 class="sec-title"><span class="n">01</span>提交</h3>
+        <span class="sec-note">还没有提交</span></div>
+      <p class="dim">还没有提交。agent 在沙箱里 commit 到 <span class="mono">${esc(task.branch || '—')}</span> 后调用 <span class="mono">hub.submit</span>，这里才会出现提交内容。</p>
+      ${kv([
+      ['实现者', hasText(task.implementer_agent) ? `<span class="mono">${esc(task.implementer_agent)}</span>` : none('未记录', 'implementer_agent 为空')],
+      ['认领会话', hasText(task.claimed_by) ? `<span class="mono">${esc(task.claimed_by)}</span>` : none('无', 'claimed_by 为空')],
+      ['分支', `<span class="mono">${esc(task.branch || '—')}</span>`],
+    ])}
+    </section>${scopeBlock}`;
   }
   const files = sub.files || [];
+  const summary = String(sub.summary || '');
   return `
   <section class="sec">
     <div class="sec-head"><h3 class="sec-title"><span class="n">01</span>提交</h3><span class="sec-note">${files.length} 个文件</span></div>
     ${kv([
-      ['commit', `<span class="mono">${esc(sub.commit || '—')}</span>`],
+      ['实现者', hasText(task.implementer_agent) ? `<span class="mono">${esc(task.implementer_agent)}</span>` : none('未记录', 'implementer_agent 为空')],
+      ['认领会话', hasText(task.claimed_by) ? `<span class="mono">${esc(task.claimed_by)}</span>` : none('无', 'claimed_by 为空')],
+      ['提交会话', hasText(sub.session_id) ? `<span class="mono">${esc(sub.session_id)}</span>` : none('未记录', 'submission.session_id 为空')],
+      ['commit', hasText(sub.commit) ? `<span class="mono">${esc(sub.commit)}</span>` : none('无', 'submission.commit 为空')],
       ['branch', `<span class="mono">${esc(sub.branch || task.branch || '—')}</span>`],
-      ['session', `<span class="mono">${esc(sub.session_id || '—')}</span>`],
-      ['提交时间', `<span title="${esc(abs(sub.submitted_at))}">${esc(abs(sub.submitted_at))}</span>`],
+      ['提交时间', hasText(sub.submitted_at) ? `<span title="${attr(abs(sub.submitted_at))}">${esc(abs(sub.submitted_at))}</span>` : none('未记录', 'submission.submitted_at 为空')],
       ['基线', `<span class="mono">${esc(shortSha(task.base_commit, 12))}</span> → <span class="mono">${esc(shortSha(sub.commit, 12))}</span>`],
       ['worktree', `<span class="mono">${esc(task.worktree || '—')}</span>`],
     ])}
   </section>
+  ${scopeBlock}
   <section class="sec">
-    <div class="sec-head"><h3 class="sec-title"><span class="n">02</span>本次提交的 diff 文件清单</h3></div>
-    <ul class="filelist">${files.map((f) => `<li><span class="mark" aria-hidden="true">M</span><span>${esc(f)}</span></li>`).join('')}</ul>
+    <div class="sec-head"><h3 class="sec-title"><span class="n">03</span>本次提交的 diff 文件清单</h3>
+      <span class="sec-note">${files.length ? `${files.length} 个` : '空'}</span></div>
+    ${files.length
+      ? `<ul class="filelist">${files.map((f) => `<li><span class="mark" aria-hidden="true">M</span><span>${esc(f)}</span></li>`).join('')}</ul>`
+      : `<p class="dim">提交里没有列出文件（submission.files 为空）。</p>`}
   </section>
   <section class="sec">
-    <div class="sec-head"><h3 class="sec-title"><span class="n">03</span>提交说明</h3></div>
-    ${longText(sub.summary || '', 'note-block')}
+    <div class="sec-head"><h3 class="sec-title"><span class="n">04</span>提交说明</h3>
+      <span class="sec-note">${summary.trim() ? `${esc(String(summary.length))} 字符 · ${esc(String(lineCount(summary)))} 行` : '空'}</span></div>
+    ${summary.trim() ? longText(summary, 'note-block') : `<p class="dim">这次提交没有写说明（submission.summary 为空）。</p>`}
   </section>`;
 }
 
+/**
+ * 面板里的会话行。
+ * 注意两处返回的 sessions[] 形状不同：
+ *   /api/sessions → {lifespan, last_heartbeat_at, pid, alive, task, log}
+ *   mission / task 详情 → {session_id, agent_id, role, status, created_at?, exit?}
+ * 之前这里只按前者的字段读，于是详情页每个会话都写着「心跳 无心跳」、
+ * 「无任务」—— 不是空，是错配。这里两种形状都认，谁的字段在就报谁。
+ */
 function sessionRow(s, current) {
-  const a = age(s.last_heartbeat_at);
+  const hb = hasText(s.last_heartbeat_at) ? age(s.last_heartbeat_at) : null;
+  const exit = s.exit && typeof s.exit === 'object' ? s.exit : null;
+  const bits = [];
+  if (hasText(s.created_at)) {
+    bits.push(`<span class="dim" title="${attr(`建会话：${abs(s.created_at)}`)}">建于 ${esc(mmdd(s.created_at))}</span>`);
+  }
+  if (hb) {
+    bits.push(`<span class="${hb.stale ? 'dim2' : 'dim'}" title="${attr(`最后心跳：${abs(s.last_heartbeat_at)}`)}">心跳 ${esc(hb.text)}</span>`);
+  }
+  if (exit) {
+    const code = exit.code == null ? '—' : String(exit.code);
+    bits.push(`<span class="dim" title="${attr(`退出：${abs(exit.at)}${hasText(exit.note) ? ` · ${exit.note}` : ''}`)}">退出 code ${esc(code)}${hasText(exit.at) ? ` · ${esc(mmdd(exit.at))}` : ''}${hasText(exit.note) ? ` · ${esc(exit.note)}` : ''}</span>`);
+  }
+  if (hasText(s.lifespan)) bits.push(`<span class="dim2">${esc(s.lifespan)}</span>`);
+  if (s.pid) bits.push(`<span class="mono dim2">pid ${esc(s.pid)} · ${s.alive ? '存活' : '已退出'}</span>`);
+  if (hasText(s.task)) {
+    bits.push(`<button class="linklike mono" type="button" data-act="open-task" data-task="${esc(s.task)}">${esc(s.task)}</button>`);
+  }
+  if (!bits.length) {
+    bits.push(none('时间字段未返回', '这张卡的 sessions[] 只含 session_id / agent_id / role / status；created_at 与 exit 在 mission 详情的 tasks[].sessions 里（mission 卡片上已摊开显示）'));
+  }
   return `<div class="sess-row st-${esc(s.status)}" data-row-s="${esc(s.session_id)}" style="${current ? 'background:var(--raised)' : ''}">
     <div>
-      <div class="sess-id">${esc(s.session_id)} <span class="mono dim2">${esc(s.agent_id || '')}</span></div>
-      <div class="sess-sub">
-        <span>${esc(s.role)}</span>
-        ${s.task ? `<button class="linklike mono" type="button" data-act="open-task" data-task="${esc(s.task)}">${esc(s.task)}</button>` : '<span class="dim2">无任务</span>'}
-        <span class="dim2">${esc(s.lifespan || '')}</span>
-        <span class="${a.stale ? 'dim2' : 'dim'}" title="${esc(abs(s.last_heartbeat_at))}">心跳 ${esc(a.text)}</span>
-        ${s.pid ? `<span class="mono dim2">pid ${esc(s.pid)} · ${s.alive ? '存活' : '已退出'}</span>` : '<span class="dim2">无 pid</span>'}
-      </div>
+      <div class="sess-id">${esc(s.session_id)} <span class="mono dim2">${esc(s.agent_id || '—')}</span></div>
+      <div class="sess-sub"><span>${esc(s.role || '未标角色')}</span>${bits.join('')}</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       ${statusPill(s.status)}
@@ -1163,15 +1268,24 @@ function renderTimelineTab(task) {
     <p class="dim2" style="font-size:11px;margin-top:8px">日志只取尾部 200 行；完整文件路径见「会话」页。</p>
   </section>
   <section class="sec">
-    <div class="sec-head"><h3 class="sec-title"><span class="n">03</span>任务卡原始字段</h3></div>
+    <div class="sec-head"><h3 class="sec-title"><span class="n">03</span>任务卡原始字段</h3>
+      <span class="sec-note">id / 归属 / 范围</span></div>
     ${kv([
       ['task_id', `<span class="mono">${esc(task.task_id)}</span>`],
+      ['实现者', hasText(task.implementer_agent) ? `<span class="mono">${esc(task.implementer_agent)}</span>` : none('未记录', 'implementer_agent 为空')],
+      ['claimed_by', hasText(task.claimed_by) ? `<span class="mono">${esc(task.claimed_by)}</span>` : none('无', 'claimed_by 为空')],
+      ['打回', Number(task.rejection_count)
+        ? `<span style="color:var(--s-rejected)">${esc(String(task.rejection_count))} 次</span> · 涉及 ${listOrNone(task.rejected_by, (l) => l.map((a) => `<span class="mono">${esc(a)}</span>`).join('、'), '无', 'rejected_by 为空')}`
+        : none('无打回', 'rejection_count = 0')],
+      ['上级 mission', hasText(task.parent)
+        ? `<a class="linklike mono" href="#/missions/${encodeURIComponent(task.parent)}">${esc(task.parent)}</a>`
+        : none('无（独立卡）', 'parent 为空：这张卡不属于任何 mission')],
       ['branch', `<span class="mono">${esc(task.branch || '—')}</span>`],
       ['base', `<span class="mono">${esc(task.base_commit || '—')}</span>`],
-      ['claimed_by', `<span class="mono">${esc(task.claimed_by || '—')}</span>`],
       ['context', `<span class="mono">${esc(task.context_package || '—')}</span>`],
-      ['depends_on', (task.depends_on || []).length ? (task.depends_on || []).map((d) => `<span class="mono">${esc(d)}</span>`).join('<br />') : '无'],
-      ['blocked', task.blocked_reason ? esc(task.blocked_reason) : '无'],
+      ['depends_on', (task.depends_on || []).length ? (task.depends_on || []).map((d) => `<span class="mono">${esc(d)}</span>`).join('<br />') : none('无依赖', 'depends_on 为空')],
+      ['blocked', hasText(task.blocked_reason) ? esc(task.blocked_reason) : none('无', 'blocked_reason 为空')],
+      ['tags', (task.tags || []).length ? (task.tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join(' ') : none('无标签', 'tags 为空')],
     ])}
   </section>`;
 }
@@ -1202,6 +1316,10 @@ function renderPanel() {
   // 所以复原要落在 renderPanel() 自己身上：谁重建，谁负责把位置还回去。
   const prevBody = $('#panel-body');
   const prevScroll = prevBody ? prevBody.scrollTop : 0;
+  // 焦点同理：异步加载（上下文包 / 日志）会再进来重建一次面板，重建后焦点掉到 body，
+  // 于是「← → 换页签」按一下就断（第一次能换，第二次没人接着）。谁重建，谁负责还焦点。
+  const prevFocus = document.activeElement;
+  const prevTabId = prevFocus && prevFocus.closest && prevFocus.closest('.panel-tabs [role="tab"]') ? prevFocus.id : '';
   if (!ui.task) {
     panel.hidden = true;
     panel.innerHTML = '';
@@ -1233,6 +1351,11 @@ function renderPanel() {
   // 把位置还回去（内容变高时浏览器会自己夹住，不会越界）。
   const nextBody = $('#panel-body');
   if (nextBody && prevScroll > 0) nextBody.scrollTop = prevScroll;
+  // 页签焦点也还回去（preventScroll 保证不跟上面的滚动复原打架）。
+  if (prevTabId) {
+    const tabEl = document.getElementById(prevTabId);
+    if (tabEl && tabEl.focus && document.activeElement !== tabEl) tabEl.focus({ preventScroll: true });
+  }
 
   // 按需拉取（错误态由 errorBlock 呈现，避免无限重试）
   const ctxKey = `ctx:${task.task_id}`;
@@ -1531,6 +1654,139 @@ function renderMessages() {
 }
 
 /* --- 视图：Agent --------------------------------------------------------- */
+/** 互评的四个维度：后端 scores 的键 → 中文。未知键原样显示，不吞数据。 */
+const PEER_DIMS = [
+  ['quality', '质量'], ['cooperation', '协作'], ['evidence', '证据'], ['speed', '速度'],
+];
+const PEER_ZH = new Map(PEER_DIMS);
+/** 九个维度的兜底顺序不走前端翻译：label 一律用后端 dimensions[].label。 */
+
+function agentHay(a) {
+  const p = a.profile || {};
+  return [
+    a.agent_id, a.display_name, a.kind, a.mcp_inject, a.transport, a.notes,
+    ...(a.capabilities || []),
+    p.personality, p.capability_notes, p.speed_notes,
+    ...(p.strengths || []), ...(p.weaknesses || []), ...(p.specialties || []),
+    ...(p.peer_reviews || []).map((r) => [r.by_agent, r.comment, r.mission_id, r.task_id].join(' ')),
+  ].join(' ').toLowerCase();
+}
+
+/** 九维画像：后端给几条就画几行（正常是 9 条），label 与 value 成对渲染，绝不分开取。 */
+function agentDims(dims) {
+  if (!Array.isArray(dims) || !dims.length) {
+    return `<p class="dim2" style="font-size:11.5px">后端没有返回 <span class="mono">dimensions[]</span>：这个 agent 的九维画像还没建立。</p>`;
+  }
+  const filled = dims.filter((d) => hasText(d && d.value)).length;
+  return `<div class="dims-head">
+      <span class="micro">九维画像</span>
+      <span class="dims-fill">${esc(String(filled))}/${esc(String(dims.length))} 维已填</span>
+    </div>
+    <dl class="dims">${dims.map((d) => `<dt>${esc(d.label || d.key || '未命名维度')}</dt>
+      <dd>${hasText(d.value)
+      ? longText(d.value, 'dimval', 110)
+      : none('未填', `后端维度 ${d.key || '?'} 的 value 为空：这个维度还没人写过`)}</dd>`).join('')}</dl>`;
+}
+
+/** 战绩：profile.stats（missions/tasks/approved/rejected/rounds）+ success_rate。
+ *  success_rate 是 **agent 这一层**的字段（不是 profile 里的），别在 profile 上取。 */
+function agentStats(a) {
+  const s = (a.profile && a.profile.stats) || {};
+  const cells = [
+    ['missions', '带过 mission', s.missions],
+    ['tasks', '任务卡', s.tasks],
+    ['approved', '通过', s.approved],
+    ['rejected', '打回', s.rejected],
+    ['rounds', '轮次', s.rounds],
+  ];
+  const rate = a.success_rate;
+  const hasRate = typeof rate === 'number' && Number.isFinite(rate);
+  return `<div class="stats">
+    ${cells.map(([key, label, n]) => {
+    const v = Number(n) || 0;
+    return `<span class="stat" title="profile.stats.${esc(key)} = ${esc(String(v))}"><span class="sk">${esc(label)}</span><span class="sv num" data-zero="${v ? 'false' : 'true'}">${esc(String(v))}</span></span>`;
+  }).join('')}
+    <span class="stat stat-rate" title="${hasRate ? 'success_rate = 通过 / (通过 + 打回)' : 'success_rate 为 null：还没有审查结论，算不出成功率'}">
+      <span class="sk">成功率</span>
+      ${hasRate
+      ? `<span class="sv num">${esc(String(rate))}%</span><span class="ratebar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, rate))}%"></i></span>`
+      : none('暂无', 'success_rate 为 null：还没有审查结论')}
+    </span>
+  </div>`;
+}
+
+/** 互评：谁给谁打的、四个维度分数、评论（长文可展开）、时间、关联 mission/task。 */
+function agentPeerReviews(p, agentId) {
+  const list = Array.isArray(p.peer_reviews) ? p.peer_reviews : [];
+  const head = `<div class="dims-head"><span class="micro">互评</span>
+    <span class="dims-fill">${list.length ? `${esc(String(list.length))} 条` : '还没有'}</span></div>`;
+  if (!list.length) {
+    return `${head}<p class="none" style="font-size:11.5px">还没有人给 ${esc(agentId)} 打过分（peer_reviews 为空）。</p>`;
+  }
+  const rows = list.slice().sort((a, b) => ts(b.at) - ts(a.at)).map((r) => {
+    const scores = r.scores && typeof r.scores === 'object' ? r.scores : {};
+    const known = PEER_DIMS.filter(([k]) => scores[k] !== undefined);
+    const extra = Object.keys(scores).filter((k) => !PEER_ZH.has(k));
+    const scoreCells = [
+      ...known.map(([k, label]) => `<span class="score" title="scores.${esc(k)}"><span class="sc-k">${esc(label)}</span><span class="sc-v num">${esc(String(scores[k]))}</span></span>`),
+      ...extra.map((k) => `<span class="score" title="scores.${esc(k)}（未登记的维度）"><span class="sc-k">${esc(k)}</span><span class="sc-v num">${esc(String(scores[k]))}</span></span>`),
+    ].join('');
+    return `<div class="peer">
+      <div class="peer-head">
+        <span class="peer-route"><span class="mono">${esc(r.by_agent || '未知评审人')}</span><span class="arrow" aria-hidden="true">→</span><span class="mono">${esc(agentId)}</span></span>
+        ${hasText(r.at) ? `<span class="dim2 mono" title="${attr(abs(r.at))}">${esc(mmdd(r.at))}</span>` : none('时间未记录', 'peer_reviews[].at 为空')}
+        ${hasText(r.mission_id) ? `<a class="linklike mono" href="#/missions/${encodeURIComponent(r.mission_id)}" title="关联 mission">${esc(r.mission_id)}</a>` : ''}
+        ${hasText(r.task_id) ? `<a class="linklike mono" href="#/board?task=${encodeURIComponent(r.task_id)}" title="关联任务卡">${esc(r.task_id)}</a>` : ''}
+      </div>
+      ${scoreCells ? `<div class="scores">${scoreCells}</div>` : `<p class="none" style="font-size:11px">这条互评没有打分维度（scores 为空）。</p>`}
+      ${hasText(r.comment)
+        ? `<div class="peer-comment">${longText(r.comment, 'note-block', 180)}</div>`
+        : `<p class="none" style="font-size:11px">这条互评没写评论（comment 为空）。</p>`}
+    </div>`;
+  }).join('');
+  return `${head}<div class="peers">${rows}</div>`;
+}
+
+/** 单个 agent 的档案卡：身份 + 锁定 + 通道 + 能力 + 九维 + 战绩 + 互评。
+ *  这张卡是自足的 —— 窄屏把上面的注册表收起来以后，档案卡单独也能说清「它是谁、能干什么」。 */
+function agentDossier(a, dims) {
+  const p = a.profile || {};
+  const locked = p.manual_locked === true;
+  const caps = Array.isArray(a.capabilities) ? a.capabilities.filter(hasText) : [];
+  const filled = Array.isArray(dims) ? dims.filter((d) => hasText(d && d.value)).length : 0;
+  return `<article class="dossier${a.enabled ? '' : ' is-off'}">
+    <div class="ds-head">
+      <span class="ds-id mono">${esc(a.agent_id)}</span>
+      <span class="ds-name">${esc(a.display_name || '未命名 agent')}</span>
+      <span class="chip">${esc(a.kind || '未标 kind')}</span>
+      ${a.enabled
+      ? '<span class="pill st-merged"><i class="dotmark" aria-hidden="true"></i>启用</span>'
+      : '<span class="pill st-draft"><i class="dotmark" aria-hidden="true"></i>停用</span>'}
+      ${locked
+      ? `<span class="lock" title="人工锁定：这个 profile 被手动定住，互评只记录、不改质量分（manual_locked = true）。">人工锁定</span>`
+      : ''}
+      <span class="ds-fill" title="九维里有内容的维度数">${esc(String(filled))}/${esc(String(Array.isArray(dims) ? dims.length : 0))} 维</span>
+    </div>
+    <div class="ds-caps">${caps.length
+      ? caps.map((c) => `<span class="chip">${esc(c)}</span>`).join('')
+      : none('没有声明能力', 'capabilities 为空')}</div>
+    ${filled ? '' : '<p class="ds-empty">这个 profile 还没有人写过画像：九维全空，也没有互评。下面是字段本身，空的地方如实标「未填」。</p>'}
+    ${agentDims(dims)}
+    ${agentStats(a)}
+    ${agentPeerReviews(p, a.agent_id)}
+    <div class="ds-foot micro">
+      <span>通道 <span class="mono">${esc(a.transport || '未记录')}</span></span>
+      <span>注入 <span class="mono">${esc(a.mcp_inject || '未记录')}</span></span>
+      <span>并发 <span class="mono">${a.concurrency == null ? '未记录' : esc(String(a.concurrency))}</span></span>
+      <span>画像更新 ${hasText(p.updated_at) ? `<span title="${attr(abs(p.updated_at))}">${esc(rel(p.updated_at))}</span>` : none('未记录', 'profile.updated_at 为空')}</span>
+      <span>质量分 <span class="mono">${p.quality_score == null ? '未记录' : esc(String(p.quality_score))}</span></span>
+      <span>成本档 <span class="mono">${p.cost_tier == null ? '未记录' : esc(String(p.cost_tier))}</span></span>
+      <span>可靠度 <span class="mono">${p.reliability == null ? '未记录' : esc(String(p.reliability))}</span></span>
+    </div>
+    ${hasText(a.notes) ? `<p class="ds-note"><span class="micro">备注</span>${esc(a.notes)}</p>` : ''}
+  </article>`;
+}
+
 function renderAgents() {
   if (!store.overview) {
     const err = store.errors.get('overview');
@@ -1538,41 +1794,51 @@ function renderAgents() {
   }
   const agents = store.overview.agents || [];
   const q = ui.q.trim().toLowerCase();
-  const list = agents.filter((a) => !q || [a.agent_id, a.display_name, a.kind, ...(a.capabilities || []), a.mcp_inject, a.transport]
-    .join(' ').toLowerCase().includes(q));
+  const list = agents.filter((a) => !q || agentHay(a).includes(q));
   const enabled = agents.filter((a) => a.enabled).length;
+  const locked = agents.filter((a) => a.profile && a.profile.manual_locked).length;
+  // 「有画像」不数 quality_score 这种自动默认值，只数真被同事评过的（peer_reviews 非空）——
+  // 否则 8 个 recipe 全算「有画像」，这个数字就没信息量了。
+  const withPeer = agents.filter((a) => ((a.profile && a.profile.peer_reviews) || []).length).length;
 
   const head = `<div class="view-head">
     <div class="view-title"><h1>Agent 注册表</h1>
-      <span class="count">${agents.length} 个 · 启用 ${enabled} 个 · 显示 ${list.length}</span></div>
+      <span class="count">${agents.length} 个 · 启用 ${enabled} 个 · 有互评 ${withPeer} 个${locked ? ` · 人工锁定 ${locked} 个` : ''} · 显示 ${list.length}</span></div>
     <div class="view-tools"><span class="micro">能力决定角色 · 通道决定注入方式</span></div>
   </div>`;
 
   if (!agents.length) return head + emptyState('没有注册的 agent', '用 mesh agent add 把 CLI agent 注册进平台，它才能被拉起干活。');
-  if (!list.length) return head + emptyState('没有匹配的 agent', '清掉关键词再试。');
+  if (!list.length) return head + emptyState('没有匹配的 agent', '清掉关键词再试 —— 搜索会扫 id / 名称 / 能力 / 画像文字 / 互评评论。');
 
   const rows = list.map((a) => `<tr class="${a.enabled ? '' : 'row-disabled'}">
     <td class="c-id">${esc(a.agent_id)}</td>
-    <td class="c-title">${esc(a.display_name)}</td>
-    <td class="c-mono">${esc(a.kind)}</td>
+    <td class="c-title">${esc(a.display_name || '未命名')}</td>
+    <td class="c-mono">${esc(a.kind || '—')}</td>
     <td>${a.enabled
       ? '<span class="pill st-merged"><i class="dotmark" aria-hidden="true"></i>启用</span>'
       : '<span class="pill st-draft"><i class="dotmark" aria-hidden="true"></i>停用</span>'}</td>
-    <td><div class="cap-list">${(a.capabilities || []).map((c) => `<span class="chip">${esc(c)}</span>`).join('')}</div></td>
-    <td class="c-num">${esc(a.concurrency)}</td>
-    <td class="c-mono">${esc(a.transport)}</td>
-    <td class="c-mono">${esc(a.mcp_inject)}</td>
-    <td class="notes">${esc(a.notes || '')}</td>
+    <td><div class="cap-list">${(a.capabilities || []).length ? (a.capabilities || []).map((c) => `<span class="chip">${esc(c)}</span>`).join('') : none('无能力声明', 'capabilities 为空')}</div></td>
+    <td class="c-num">${esc(a.concurrency == null ? '—' : String(a.concurrency))}</td>
+    <td class="c-mono">${esc(a.transport || '—')}</td>
+    <td class="c-mono">${esc(a.mcp_inject || '—')}</td>
+    <td class="notes" title="${attr(a.notes || '')}">${hasText(a.notes) ? esc(a.notes) : none('无备注', 'notes 为空')}</td>
   </tr>`).join('');
 
-  return head + `<div class="tbl-wrap"><table class="tbl">
+  return head + `<div class="tbl-wrap tbl-wrap-agents"><table class="tbl tbl-agents">
     <caption class="sr-only">Agent 注册表</caption>
     <thead><tr>
       <th scope="col">ID</th><th scope="col">名称</th><th scope="col">kind</th><th scope="col">状态</th>
       <th scope="col">capabilities</th><th scope="col">并发</th><th scope="col">通道</th><th scope="col">注入</th><th scope="col">备注</th>
     </tr></thead>
     <tbody>${rows}</tbody>
-  </table></div>`;
+  </table></div>
+  <section class="msec" id="a-dossier" aria-labelledby="a-dossier-h">
+    <div class="sec-head">
+      <h2 class="sec-title" id="a-dossier-h"><span class="n">02</span>画像与战绩</h2>
+      <span class="sec-note">九维能力画像 · 人工锁定 · 互评 · 自动统计（来自 profile / dimensions / success_rate）</span>
+    </div>
+    <div class="dossiers">${list.map((a) => agentDossier(a, a.dimensions)).join('')}</div>
+  </section>`;
 }
 
 /* --- 视图：任务（mission）------------------------------------------------- */
@@ -1792,33 +2058,97 @@ function missionTimelineBlock(d, idx) {
 function missionAcceptance(accept) {
   if (!accept.length) return '';
   return `<div class="maccept">
-    <span class="micro">验收（开单时写的）</span>
+    <span class="micro">验收（开单时写的 · ${esc(String(accept.length))} 条）</span>
     <ol>${accept.map((a, i) => `<li><span class="n">${pad2(i + 1)}</span><span>${esc(a)}</span></li>`).join('')}</ol>
   </div>`;
 }
 
 function missionCardHtml(t, onlyFail) {
   const reviews = Array.isArray(t.reviews_full) ? t.reviews_full : [];
-  const scope = (t.scope && t.scope.write) || [];
+  const write = Array.isArray(t.scope && t.scope.write) ? t.scope.write : [];
+  const read = Array.isArray(t.scope && t.scope.read) ? t.scope.read : [];
   const merge = t.merge;
-  const sub = t.submission;
+  const sub = t.submission && typeof t.submission === 'object' ? t.submission : null;
+  const rejectionCount = Number(t.rejection_count) || 0;
+  const rejectedBy = Array.isArray(t.rejected_by) ? t.rejected_by.filter(hasText) : [];
   const reviewers = Array.from(new Set(reviews.map((r) => r.reviewer_agent).filter(Boolean)));
+  const subFiles = sub && Array.isArray(sub.files) ? sub.files : [];
 
-  const meta = [
-    `<span><span class="k">role</span> <span class="v">${esc(t.role || '—')}</span></span>`,
-    `<span><span class="k">impl</span> <span class="v">${esc(t.implementer_agent || '—')}</span></span>`,
-    `<span><span class="k">rev</span> <span class="v">${esc(reviewers.join(',') || '—')}</span></span>`,
+  // 谁实现、谁审、打回几次：每一条都单独占一格，缺了就写「无」，不留空格子。
+  const facts = [
+    `<span><span class="k">role</span> <span class="v">${esc(t.role || '未标角色')}</span></span>`,
+    `<span><span class="k">实现者</span> ${hasText(t.implementer_agent)
+      ? `<span class="v mono">${esc(t.implementer_agent)}</span>`
+      : none('未记录', 'implementer_agent 为空：这张卡还没人接手实现')}</span>`,
+    `<span><span class="k">认领</span> ${hasText(t.claimed_by)
+      ? `<span class="v mono">${esc(t.claimed_by)}</span>`
+      : none('无', 'claimed_by 为空')}</span>`,
+    `<span><span class="k">审查者</span> ${reviewers.length
+      ? `<span class="v mono">${esc(reviewers.join('、'))}</span>`
+      : none('还没人审', 'reviews_full 为空')}</span>`,
+    `<span><span class="k">打回</span> ${rejectionCount
+      ? `<span class="v tag-broken">${esc(String(rejectionCount))} 次</span>${rejectedBy.length ? ` <span class="dim2 mono">${esc(rejectedBy.join('、'))}</span>` : ''}`
+      : none('无', 'rejection_count = 0：这张卡一次都没被打回')}</span>`,
+    `<span><span class="k">合并</span> ${merge
+      ? `<span class="v mono">${esc(shortSha(merge.merge_commit))}</span> <span class="dim2">${esc(merge.mode || '—')} · ${esc(String((merge.files || []).length))} 文件</span>`
+      : none('未合并', 'merge 为空')}</span>`,
   ];
-  if (scope.length) meta.push(`<span><span class="k">scope</span> <span class="v">${esc(scope.join(', '))}</span></span>`);
-  if (merge) meta.push(`<span><span class="k">merge</span> <span class="v">${esc(shortSha(merge.merge_commit))} · ${esc(merge.mode || '—')}</span></span>`);
-  if (sub && sub.commit) meta.push(`<span><span class="k">commit</span> <span class="v">${esc(shortSha(sub.commit))}</span></span>`);
-  if (t.rejection_count) meta.push(`<span class="tag-broken"><span class="k">打回</span> ${esc(String(t.rejection_count))} 次</span>`);
+
+  // 提交：commit / 分支 / 时间 + 提交说明全文（clamp 后可展开）+ 文件清单。
+  const subBlock = sub
+    ? `<div class="msub">
+        <div class="msub-head">
+          <span class="micro">提交 ${esc(sub.session_id || '')}</span>
+          <span class="mono">${esc(shortSha(sub.commit, 9) || '无 commit')}</span>
+          <span class="dim2 mono">on ${esc(sub.branch || t.branch || '—')}</span>
+          ${hasText(sub.submitted_at) ? `<span class="dim2" title="${attr(abs(sub.submitted_at))}">${esc(mmdd(sub.submitted_at))}</span>` : none('时间未记录', 'submission.submitted_at 为空')}
+          <span class="dim2">${subFiles.length ? `${esc(String(subFiles.length))} 个文件` : '未列文件'}</span>
+        </div>
+        ${String(sub.summary || '').trim()
+          ? longText(sub.summary, 'note-block', 300)
+          : `<p class="note-block dim2">提交没有写说明（submission.summary 为空）。</p>`}
+        ${subFiles.length
+          ? `<ul class="filelist filelist-inline">${subFiles.map((f) => `<li><span class="mark" aria-hidden="true">M</span><span>${esc(f)}</span></li>`).join('')}</ul>`
+          : ''}
+      </div>`
+    : '';
+
+  const scopeBlock = `<div class="mscope">
+    <div class="scope-row"><span class="micro">写 scope</span><span class="scope-vals">${listOrNone(write, codeChips, '无（不授权写任何文件）', 'scope.write 为空')}</span></div>
+    <div class="scope-row"><span class="micro">读 scope</span><span class="scope-vals">${listOrNone(read, codeChips, '无（未声明额外只读文件）', 'scope.read 为空')}</span></div>
+  </div>`;
+
+  // 会话：mission 接口的 tasks[].sessions 比 task 接口多了 created_at / exit。
+  // 这份证据原来只有 API 里有、界面上看不见，这里摊开：谁跑过这张卡、何时起、怎么退的。
+  const sessions = Array.isArray(t.sessions) ? t.sessions : [];
+  const sessBlock = sessions.length ? `<div class="msess">
+    <span class="micro">会话</span>
+    ${sessions.map((s) => {
+    const exit = s && s.exit && typeof s.exit === 'object' ? s.exit : null;
+    const code = exit && exit.code != null ? String(exit.code) : null;
+    const title = [
+      `session ${s.session_id || '?'} · agent ${s.agent_id || '?'} · ${s.role || '?'} · ${s.status || '?'}`,
+      hasText(s.created_at) ? `建于 ${abs(s.created_at)}` : '建会话时间未给出',
+      exit ? `退出 ${code == null ? 'code 未记录' : `code ${code}`}${hasText(exit.at) ? ` @ ${abs(exit.at)}` : ''}${hasText(exit.note) ? ` · ${exit.note}` : ''}` : '这条会话没有退出记录',
+    ].join(' · ');
+    return `<span class="msess-item" title="${attr(title)}">
+      <span class="mono">${esc(s.session_id || '未编号会话')}</span>
+      <span class="dim2">${esc(s.agent_id || '未标 agent')}</span>
+      ${hasText(s.role) ? `<span class="dim2">${esc(s.role)}</span>` : ''}
+      <span class="dim2 mono">${esc(s.status || '—')}</span>
+      ${hasText(s.created_at) ? `<span class="dim">建于 ${esc(mmdd(s.created_at))}</span>` : ''}
+      ${exit ? `<span class="dim">退出 ${code == null ? none('code 未记录', 'exit.code 为 null：进程不是正常退出') : esc(`code ${code}`)}</span>` : ''}
+    </span>`;
+  }).join('')}
+  </div>` : '';
 
   const revHtml = reviews.map((r) => {
     const crits = (r.criteria || []).map(critOf);
     const shown = onlyFail ? crits.filter((c) => c.ok === false) : crits;
     if (onlyFail && !shown.length) return '';
     const ok = String(r.verdict || '') === 'approved';
+    const passN = crits.filter((c) => c.ok === true).length;
+    const failN = crits.filter((c) => c.ok === false).length;
     const chain = shown.length
       ? `<div class="chain">${shown.map((c) => `<div class="chain-item" data-pass="${c.ok === true ? 'true' : c.ok === false ? 'false' : 'null'}">
           <div class="chain-mark"><span class="glyph" aria-hidden="true">${c.ok === true ? '✓' : c.ok === false ? '✕' : '?'}</span><span class="wire"></span></div>
@@ -1832,12 +2162,14 @@ function missionCardHtml(t, onlyFail) {
     return `<div class="mrev">
       <div class="mrev-head">
         <span>${esc(r.review_id || '—')}</span>
-        <span class="${ok ? 'ok' : 'no'}">${esc(r.verdict || '—')}</span>
-        <span>审查者 ${esc(r.reviewer_agent || '—')}</span>
-        ${r.reviewer_session ? `<span class="dim2">${esc(r.reviewer_session)}</span>` : ''}
-        ${r.independent ? '<span class="dim2">独立</span>' : ''}
+        <span class="${ok ? 'ok' : 'no'}">${esc(r.verdict || '无结论')}</span>
+        <span>审查者 <span class="mono">${esc(r.reviewer_agent || '—')}</span></span>
+        ${hasText(r.reviewer_session) ? `<span class="dim2 mono">${esc(r.reviewer_session)}</span>` : ''}
+        <span>审的是 <span class="mono">${esc(r.implementer_agent || t.implementer_agent || '—')}</span> 的提交</span>
+        ${crits.length ? `<span class="dim2">${esc(String(crits.length))} 条 criteria · ${esc(String(passN))} PASS / ${esc(String(failN))} FAIL</span>` : ''}
+        ${r.independent ? '<span class="dim2">独立审查</span>' : '<span class="dim2">非独立</span>'}
         <span class="dim2" title="${attr(abs(r.at))}">${esc(mmdd(r.at))}</span>
-        ${r.submission_commit ? `<span class="dim2">commit ${esc(shortSha(r.submission_commit))}</span>` : ''}
+        ${hasText(r.submission_commit) ? `<span class="dim2 mono">commit ${esc(shortSha(r.submission_commit))}</span>` : ''}
       </div>
       ${chain}
       ${r.notes ? `<div class="mrev-notes"><span class="micro">判词</span>${longText(r.notes, 'note-block')}</div>` : ''}
@@ -1850,7 +2182,10 @@ function missionCardHtml(t, onlyFail) {
       <h3 class="mcard-title">${esc(t.title)}</h3>
       ${statusPill(t.status)}
     </div>
-    <div class="mcard-meta">${meta.join('')}</div>
+    <div class="mcard-meta">${facts.join('')}</div>
+    ${scopeBlock}
+    ${subBlock}
+    ${sessBlock}
     ${missionAcceptance(t.acceptance || [])}
     ${revHtml || '<div class="mrev"><p class="dim">这张卡还没有审查记录（reviews_full 为空）。</p></div>'}
   </article>`;
@@ -1916,18 +2251,32 @@ function missionCardsBlock(d) {
 function missionReportBlock(d, m) {
   const report = String(d.report || '').trim();
   const path = d.report_path || '';
+  const chars = report.length;
+  const lines = lineCount(report);
+  const files = Array.isArray(d.files) ? d.files : [];
+  const onDisk = files.find((f) => f && f.name === 'report.md');
+  // 报告入口要能回答两件事：在哪 / 写了多少。路径与字数都放在标题行上，
+  // 不用先滚到底才知道这份报告是空的还是三万字。
+  const loc = `<div class="report-loc">
+    <span class="micro">报告文件</span>
+    ${hasText(path) ? `<span class="mono rl-path" title="${attr(path)}">${esc(path)}</span>` : none('未记录落盘路径', 'report_path 为空')}
+    <span class="rl-stat">${esc(String(chars))} 字符 · ${esc(String(lines))} 行</span>
+    ${onDisk ? `<span class="mfile" data-exists="${onDisk.exists ? 'true' : 'false'}" title="${attr(onDisk.path)}">${onDisk.exists ? '在盘' : '文件不存在'}</span>` : ''}
+    ${hasText(m && m.report_at) ? `<span class="rl-stat" title="${attr(abs(m.report_at))}">写于 ${esc(mmdd(m.report_at))}</span>` : none('写入时间未记录', 'mission.report_at 为空')}
+  </div>`;
   if (!report) {
     return `<section class="msec" id="m-report" tabindex="-1">
       <div class="sec-head"><h2 class="sec-title"><span class="n">03</span>交付报告</h2><span class="sec-note">0 字符</span></div>
-      ${emptyState('报告还没写', path
+      ${loc}
+      ${emptyState('报告还没写', hasText(path)
         ? `报告文件应该在 ${path}，但目前没有内容 —— lead 要用 write_report 写下它。`
         : '这次 mission 还没有报告：lead 的 write_report 还没跑，或者报告文件被清理了。')}
     </section>`;
   }
   return `<section class="msec" id="m-report" tabindex="-1">
     <div class="sec-head"><h2 class="sec-title"><span class="n">03</span>交付报告</h2>
-      <span class="sec-note">${m && m.report_at ? `写于 ${esc(mmdd(m.report_at))}` : '交付物'}</span></div>
-    <p class="doc-path">${esc(path || '（无落盘路径）')} · ${esc(String(report.length))} 字符</p>
+      <span class="sec-note">${esc(String(chars))} 字符 · ${esc(String(lines))} 行${hasText(m && m.report_at) ? ` · 写于 ${esc(mmdd(m.report_at))}` : ''}</span></div>
+    ${loc}
     <div class="mreport md">${mdRender(report)}</div>
   </section>`;
 }
@@ -1950,7 +2299,11 @@ function renderMissionDetail() {
   const p = missionProgress(d.progress);
   const accept = m.acceptance || [];
   const files = d.files || [];
-  const mates = m.teammates || [];
+  const mates = Array.isArray(m.teammates) ? m.teammates.filter(hasText) : [];
+  const rejectedTasks = Array.isArray(m.rejected_tasks) ? m.rejected_tasks.filter(hasText) : [];
+  const reportText = String(d.report || '').trim();
+  const reportChars = reportText.length;
+  const reportLines = lineCount(reportText);
   const cardCount = (d.tasks || []).length;
   const tlCount = (d.timeline || []).length;
   let critCount = 0;
@@ -1973,29 +2326,51 @@ function renderMissionDetail() {
     </div>
     <h1 id="m-title">${esc(m.title || '（无标题）')}</h1>
     <div class="mhero-meta">
-      <span><span class="k">lead</span> <span class="v">${esc(m.lead_agent || '—')}</span>${m.lead_session ? `<span class="dim2"> ${esc(m.lead_session)}</span>` : ''}</span>
+      <span><span class="k">lead</span> ${hasText(m.lead_agent)
+        ? `<span class="v">${esc(m.lead_agent)}</span>${hasText(m.lead_session)
+          ? `<span class="dim2 mono" title="lead 会话：${attr(m.lead_session)}"> ${esc(m.lead_session)}</span>`
+          : ` ${none('（未记 lead 会话）', 'mission.lead_session 为空')}`}`
+        : none('未指派 lead', 'mission.lead_agent 为空')}</span>
       <span><span class="k">轮次</span> <span class="v">${esc(String(m.rounds ?? 0))}</span></span>
       <span title="建单 → 报告"><span class="k">时长</span> <span class="v">${esc(dur(missionMs(m)))}</span></span>
       <span title="${attr(abs(m.created_at))}"><span class="k">建单</span> <span class="v">${esc(mmdd(m.created_at))}</span></span>
       <span title="${attr(abs(m.report_at || m.updated_at))}"><span class="k">收尾</span> <span class="v">${esc(mmdd(m.report_at || m.updated_at))}</span></span>
       <span title="已合并 / 卡数">${progressBar(p)}</span>
-      ${m.source ? `<span><span class="k">来源</span> <span class="v">${esc(m.source)}</span></span>` : ''}
-      ${mates.length ? `<span><span class="k">参与</span> <span class="v">${esc(mates.join('、'))}</span></span>` : ''}
+      <span><span class="k">来源</span> ${hasText(m.source) ? `<span class="v">${esc(m.source)}</span>` : none('未记录', 'mission.source 为空')}</span>
+      <span><span class="k">打回</span> ${rejectedTasks.length
+        ? `<span class="v tag-broken">${esc(String(rejectedTasks.length))} 张卡</span> <span class="dim2 mono">${esc(rejectedTasks.join('、'))}</span>`
+        : none('无', 'mission.rejected_tasks 为空：这次 mission 一次都没打回')}</span>
+      <span><span class="k">参与</span> ${mates.length
+        ? `<span class="v">${esc(mates.join('、'))}</span>`
+        : none('未记录参与人', 'mission.teammates 为空')}</span>
     </div>
     ${briefBlock}
     ${missionAcceptance(accept)}
     ${trail}
     <div class="mfiles">
       <span class="micro">落盘</span>
-      <span class="mono dim2">${esc(d.history_dir || '—')}</span>
-      ${files.map((f) => `<span class="mfile" data-exists="${f.exists ? 'true' : 'false'}" title="${attr(f.path)}${f.exists ? '' : ' · 文件不存在'}">${esc(f.name)}${f.exists ? '' : '（缺）'}</span>`).join('')}
+      <span class="mono dim2">${hasText(d.history_dir) ? esc(d.history_dir) : none('未记录目录', 'history_dir 为空')}</span>
+      ${files.length
+        ? files.map((f) => {
+          // 报告那一格直接就是入口：点它跳到正文，字数与行数写在格子里。
+          if (f.name === 'report.md') {
+            return `<button class="mfile mfile-report" type="button" data-act="jump" data-to="m-report" title="跳到报告正文 · ${attr(f.path)}">
+              ${esc(f.name)} · ${esc(String(reportChars))} 字符 / ${esc(String(reportLines))} 行${f.exists ? '' : '（缺）'}
+            </button>`;
+          }
+          return `<span class="mfile" data-exists="${f.exists ? 'true' : 'false'}" title="${attr(f.path)}${f.exists ? '' : ' · 文件不存在'}">${esc(f.name || f.path || '未命名')}${f.exists ? '' : '（缺）'}</span>`;
+        }).join('')
+        : none('这一层没有落盘文件', 'files 为空')}
+      ${files.some((f) => f && f.name === 'report.md') ? '' : `<button class="mfile mfile-report" type="button" data-act="jump" data-to="m-report" title="跳到报告正文 · ${attr(d.report_path || '（无落盘路径）')}">
+        report.md · ${esc(String(reportChars))} 字符 / ${esc(String(reportLines))} 行
+      </button>`}
     </div>
   </section>`;
 
   const nav = `<div class="mnav" role="group" aria-label="页内跳转">
-    <button class="mnav-btn" type="button" data-act="jump" data-to="m-time"><span class="n">01</span>时间线<span class="cnt">${tlCount} 条</span></button>
-    <button class="mnav-btn" type="button" data-act="jump" data-to="m-cards"><span class="n">02</span>卡片与证据<span class="cnt">${cardCount} 卡 · ${critCount} 条款</span></button>
-    <button class="mnav-btn" type="button" data-act="jump" data-to="m-report"><span class="n">03</span>交付报告</button>
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-time"><span class="n">01</span>时间线<span class="cnt">${esc(String(tlCount))} 条</span></button>
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-cards"><span class="n">02</span>卡片与证据<span class="cnt">${esc(String(cardCount))} 卡 · ${esc(String(critCount))} 条款</span></button>
+    <button class="mnav-btn" type="button" data-act="jump" data-to="m-report"><span class="n">03</span>交付报告<span class="cnt">${esc(String(reportChars))} 字</span></button>
   </div>`;
 
   return `${crumb}${hero}${nav}${missionTimelineBlock(d, idx)}${missionCardsBlock(d)}${missionReportBlock(d, m)}`;

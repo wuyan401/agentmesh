@@ -801,7 +801,12 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--ink); }
 
 /* --- agent --------------------------------------------------------------- */
 .cap-list { display: flex; flex-wrap: wrap; gap: 3px; }
-.notes { font-size: 11px; color: var(--ink-3); overflow-wrap: break-word; max-width: 42ch; }
+/* 备注留三行：长 note 会把一行撑成十几行高，注册表就失去「一览」的功能了。
+   全文在 title 里，一个悬停就拿回来。 */
+.notes {
+  font-size: 11px; color: var(--ink-3); overflow-wrap: break-word; max-width: 42ch;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
 
 /* --- 总览 ---------------------------------------------------------------- */
 .ov-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
@@ -1000,6 +1005,142 @@ th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--ink); }
   border: 1px solid var(--line); border-left: 2px solid var(--s-merged);
   border-radius: var(--radius); background: var(--panel);
   padding: 12px 16px 16px;
+}
+
+/* --- 字段补全：空值 / 范围 / 提交 / 报告入口 ------------------------------ */
+/* 空不是空白。所有「后端没给这一项」的位置统一走 .none：
+   一句人话 + 虚线（暗示这个位置本该有东西）+ title 里写清是哪个字段空着。 */
+.none {
+  color: var(--ink-4);
+  font-size: 11px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--ink-4) 45%, transparent);
+  cursor: help;
+}
+.codechip {
+  font-size: 10.5px; color: var(--ink); background: var(--raised);
+  border: 1px solid var(--line-soft); border-radius: 1px; padding: 0 4px;
+  overflow-wrap: anywhere;
+}
+
+/* scope 的写范围与读范围：两行两栏，标签在左、路径在右，永不混成一个逗号串 */
+.scope-pair {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--line-soft);
+}
+.scope-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.scope-row > .micro { white-space: nowrap; }
+.scope-vals { display: flex; flex-wrap: wrap; gap: 3px 6px; min-width: 0; }
+
+/* 卡片上的提交块：commit / 分支 / 时间 + 提交说明（可展开）+ 文件 */
+.msub {
+  margin: 8px 12px 0; padding-top: 8px; border-top: 1px dashed var(--line-soft);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.msub-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+.msub .note-block { font-size: 11.5px; color: var(--ink-3); }
+.filelist-inline { flex-direction: row; flex-wrap: wrap; gap: 3px 10px; }
+.filelist-inline li { font-size: 10.5px; }
+
+/* mission 卡片上的会话条：mission 接口独有的一份证据（建会话 + 退出码） */
+.msess { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 7px 12px 0; padding-top: 7px; border-top: 1px dashed var(--line-soft); }
+.msess-item {
+  display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px;
+  border: 1px solid var(--line-soft); border-radius: 1px; padding: 1px 5px;
+  font-size: 10px; color: var(--ink-3);
+}
+
+/* mission 头部的报告入口：一句话回答「报告在哪、写了多少字」 */
+.report-loc {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px;
+  margin-bottom: 10px; padding: 6px 8px;
+  border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--bg-2);
+}
+.rl-path { font-size: 10.5px; color: var(--ink); overflow-wrap: anywhere; }
+.rl-stat { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+button.mfile-report {
+  cursor: pointer; display: inline-flex; align-items: baseline; gap: 6px; color: var(--ink-2);
+}
+button.mfile-report:hover { color: var(--ink); border-color: var(--line-strong); }
+/* 面板「审查记录」里的逐条速览：比整段 criteria 更适合扫 */
+.crit-sum { display: flex; flex-direction: column; gap: 2px; margin: 5px 0; font-size: 11px; color: var(--ink-3); }
+.crit-sum li { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 5px; align-items: baseline; }
+.crit-sum .glyph { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-4); }
+.crit-sum li[data-pass="true"] .glyph { color: var(--s-merged); }
+.crit-sum li[data-pass="false"] .glyph { color: var(--s-rejected); }
+
+/* --- Agent 档案卡：九维画像 + 战绩 + 互评 -------------------------------- */
+.dossiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 10px; }
+.dossier {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  border: 1px solid var(--line); border-left: 2px solid var(--line-strong);
+  border-radius: var(--radius); background: var(--panel); padding: 10px 12px 11px;
+}
+.dossier.is-off { border-left-color: var(--line); }
+.ds-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; }
+.ds-id { font-size: 12px; color: var(--ink); }
+.ds-name { font-size: 12.5px; font-weight: 600; }
+.ds-fill { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); white-space: nowrap; }
+/* 人工锁定：只用一个标签 + title，不改任何数字 —— 锁的是「别自动改分」，不是「别给人看」 */
+.lock {
+  font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em;
+  color: var(--s-claimed); cursor: help;
+  border: 1px solid color-mix(in srgb, var(--s-claimed) 45%, var(--line));
+  background: color-mix(in srgb, var(--s-claimed) 10%, transparent);
+  border-radius: 1px; padding: 0 5px;
+}
+.ds-empty { font-size: 11px; color: var(--ink-4); line-height: 1.65; }
+.ds-caps { display: flex; flex-wrap: wrap; gap: 3px; }
+.ds-note { font-size: 11px; color: var(--ink-3); line-height: 1.65; overflow-wrap: break-word; }
+.ds-note .micro { margin-right: 6px; }
+.dims-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-top: 7px; border-top: 1px dashed var(--line-soft); }
+.dims-fill { font-family: var(--font-mono); font-size: 10px; color: var(--ink-4); }
+.dims { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 3px 8px; margin-top: 5px; font-size: 11.5px; }
+.dims dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: .03em; color: var(--ink-4); padding-top: 2px; overflow-wrap: anywhere; }
+.dims dd { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.dimval { font-size: 11.5px; line-height: 1.6; color: var(--ink-2); white-space: pre-wrap; }
+.stats { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 14px; padding-top: 7px; border-top: 1px dashed var(--line-soft); }
+.stat { display: inline-flex; align-items: baseline; gap: 5px; }
+.stat .sk { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .04em; color: var(--ink-4); }
+.stat .sv { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--ink); }
+.stat .sv[data-zero="true"] { color: var(--ink-4); font-weight: 400; }
+.stat-rate { margin-left: auto; }
+.ratebar { display: inline-block; width: 42px; height: 3px; background: var(--line-strong); border-radius: 1px; overflow: hidden; }
+.ratebar i { display: block; height: 100%; background: var(--s-merged); }
+.peers { display: flex; flex-direction: column; gap: 8px; }
+.peer { padding-top: 7px; border-top: 1px solid var(--line-soft); }
+.peer-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
+.peer-route { display: inline-flex; align-items: baseline; gap: 5px; color: var(--ink-2); }
+.peer-route .arrow { color: var(--ink-4); }
+.scores { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 5px 0 4px; }
+.score { display: inline-flex; align-items: baseline; gap: 5px; border: 1px solid var(--line-soft); background: var(--bg); border-radius: 1px; padding: 1px 5px; }
+.sc-k { font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-4); }
+.sc-v { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--ink); }
+.peer-comment .note-block { margin-top: 2px; font-size: 11px; color: var(--ink-3); }
+.ds-foot { display: flex; flex-wrap: wrap; gap: 3px 12px; padding-top: 7px; border-top: 1px dashed var(--line-soft); }
+
+@media (max-width: 899px) {
+  .dossiers { grid-template-columns: minmax(0, 1fr); }
+  .scope-row { grid-template-columns: 84px minmax(0, 1fr); }
+  .stat-rate { margin-left: 0; }
+  .report-loc { padding: 5px 7px; }
+  /* 窄屏的宽表：宁可横向滚，也不要把 9 列挤成「一格一行」的竖条 ——
+     挤扁之后每行 150px 高、还读不出列与列的对应关系。 */
+  .tbl { min-width: 680px; }
+}
+
+@media (max-width: 640px) {
+  .dims { grid-template-columns: 58px minmax(0, 1fr); }
+  .dossier { padding: 9px 10px 10px; }
+  /* 分区标题与右侧注解在窄屏换行，别让「画像与战绩」被挤成「画像与 / 战绩」 */
+  .sec-head { flex-wrap: wrap; gap: 3px 10px; }
+  /* 390px 上 9 列的注册表既塞不下、横向滚动时每行又被最宽的那格撑成一百多像素高。
+     窄屏直接收起它，改用下面的档案卡：卡里已经有身份 / 状态 / 能力 / 通道 / 注入 /
+     并发 / 备注，字段一个不少，只是换了一种排法。≥641px 注册表照旧。 */
+  .tbl-wrap-agents { display: none; }
+  .tbl { min-width: 0; }
+  /* 页内跳转条在手机上只留三段标题：带计数会横向滚出半截数字，看起来像坏了。
+     计数在各个分区标题右侧还在。 */
+  .mnav-btn .cnt { display: none; }
 }
 
 @media (max-width: 1099px) {
