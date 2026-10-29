@@ -6,6 +6,8 @@
  * expressing "this agent may not use tool X" (C2/C4): there is no field for it.
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
 import type { AgentCard, RoleId, SessionCard, TaskCard } from '../core/types.ts'
 import type { Hub } from '../core/hub.ts'
 
@@ -64,10 +66,14 @@ export function buildChildEnv(ctx: SpawnContext): Record<string, string> {
     if (k.startsWith('MESH_')) continue
     env[k] = v
   }
-  const pathParts = (env['PATH'] ?? '').split(process.platform === 'win32' ? ';' : ':').filter(Boolean)
-  const nodeExeDir = process.execPath.replace(/[\\/][^\\/]+$/, '')
-  if (!pathParts.some((p) => p.toLowerCase() === nodeExeDir.toLowerCase())) pathParts.unshift(nodeExeDir)
-  env['PATH'] = pathParts.join(process.platform === 'win32' ? ';' : ':')
+  const sep = process.platform === 'win32' ? ';' : ':'
+  const pathParts = (env['PATH'] ?? '').split(sep).filter(Boolean)
+  // The worker gets a node it is allowed to execute first, then the hub's own node
+  // as a fallback. See workerNodeDir() for why the order is not the other way round.
+  const head = [workerNodeDir(), path.dirname(process.execPath)]
+  const seen = new Set(head.map((p) => p.toLowerCase()))
+  const rest = pathParts.filter((p) => !seen.has(p.toLowerCase()))
+  env['PATH'] = [...head, ...rest].join(sep)
 
   env['MESH_ROOT'] = ctx.hub.paths.root
   env['MESH_MESH_DIR'] = ctx.hub.paths.meshDir
@@ -86,6 +92,28 @@ export function buildChildEnv(ctx: SpawnContext): Record<string, string> {
 
 /** Absolute path of the agentmesh package (holds cli/, hub/). */
 export const ADAPTER_PACKAGE_ROOT = resolvePackageRoot()
+
+/**
+ * Where the worker-facing copy of node lives.
+ *
+ * DSH sandboxes a worker process at Low integrity; the node Hermes itself runs on is
+ * Medium, so the worker cannot execute it and any `node` call dies with WinError 5
+ * (that is why workers used to "self-verify statically" and never ran a test).
+ * The fix is a *separate* copy tagged Low — flipping the shared one to Low breaks
+ * every node process on the machine (EPERM on `.mesh-human.json.tmp`), so never do that.
+ *
+ * Resolution order: `MESH_WORKER_NODE_DIR` if it holds a node binary, then the
+ * machine's prepared copy, then the hub's own node directory (non-Windows or a
+ * machine that has not prepared a copy).
+ */
+export function workerNodeDir(): string {
+  const bin = process.platform === 'win32' ? 'node.exe' : 'node'
+  const override = process.env['MESH_WORKER_NODE_DIR']
+  if (override && fs.existsSync(path.join(override, bin))) return override
+  const prepared = process.platform === 'win32' ? 'D:\\AI\\workspace\\.tools\\node' : ''
+  if (prepared && fs.existsSync(path.join(prepared, bin))) return prepared
+  return path.dirname(process.execPath)
+}
 
 function resolvePackageRoot(): string {
   // hub/adapters/index.ts -> hub/adapters -> hub -> package root

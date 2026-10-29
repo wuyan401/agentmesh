@@ -5,7 +5,7 @@ import path from 'node:path'
 import { dshAdapter, dshPatchYaml } from '../../hub/adapters/dsh.ts'
 import { hermesAdapter } from '../../hub/adapters/hermes.ts'
 import { cliGenericAdapter } from '../../hub/adapters/cli-generic.ts'
-import { buildChildEnv, toolPrefixFor, adapterFor } from '../../hub/adapters/index.ts'
+import { buildChildEnv, toolPrefixFor, adapterFor, workerNodeDir } from '../../hub/adapters/index.ts'
 import { buildPrompt } from '../../hub/scheduler/prompt.ts'
 import { createHarness, addAgent, createReadyTask, newSession } from '../helpers.ts'
 import type { SpawnContext } from '../../hub/adapters/types.ts'
@@ -82,6 +82,27 @@ test('adapter dsh: the spawned child never inherits the spawning session identit
     assert.equal(env['DSH_HOME'], 'C:\\mock-dsh-home', 'credentials home must survive the spawn verbatim')
   } finally {
     process.env = saved
+    h.cleanup()
+  }
+})
+
+test('adapter env: the worker gets a node it may execute before the hub own node', () => {
+  const h = createHarness('adapter-env-node')
+  try {
+    addAgent(h.hub, 'dsh-01', ['backend_dev'], { kind: 'dsh', command: process.execPath })
+    const ctx = ctxFor(h, 'dsh-01')
+    const env = buildChildEnv(ctx)
+    const sep = process.platform === 'win32' ? ';' : ':'
+    const parts = (env['PATH'] ?? '').split(sep).filter(Boolean)
+    // Every spawned worker must be able to find a node without asking the hub.
+    assert.equal(parts[0], workerNodeDir(), 'the worker-facing node dir must lead PATH')
+    const lower = parts.map((p) => p.toLowerCase())
+    // The hub's own node stays reachable as a fallback.
+    assert.ok(parts.includes(path.dirname(process.execPath)))
+    // The worker-facing node dir must appear exactly once (the inherited PATH on this
+    // host already carries its own duplicates; that is not ours to fix).
+    assert.equal(lower.filter((p) => p === workerNodeDir().toLowerCase()).length, 1)
+  } finally {
     h.cleanup()
   }
 })

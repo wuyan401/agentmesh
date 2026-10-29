@@ -8,7 +8,7 @@ import { meshCliPath } from './types.ts'
 import type { Adapter, SpawnContext, SpawnPlan } from './types.ts'
 import type { AgentCard } from '../core/types.ts'
 
-export { ADAPTER_PACKAGE_ROOT, buildChildEnv, hubMcpServerPath, meshCliPath } from './types.ts'
+export { ADAPTER_PACKAGE_ROOT, buildChildEnv, hubMcpServerPath, meshCliPath, workerNodeDir } from './types.ts'
 export type { Adapter, SpawnContext, SpawnPlan } from './types.ts'
 
 export function adapterFor(agent: AgentCard): Adapter {
