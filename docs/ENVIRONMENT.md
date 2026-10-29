@@ -65,13 +65,20 @@ DSH 用这个 env 拉起 stdio MCP server 时，**进程的 PATH 没有带过去
 #   transport:  "file"
 ```
 
-**平台侧的正解（未改，属于 hub/adapters 代码）**：生成 patch 时把 `PATH` 一起写进 MCP server 的
-env；或者让 `submit` 不依赖 PATH（用绝对路径解析 git）。
+**平台侧的正解（2026-10-29 已修，commit `830144f`）**：两件事都做了 ——
+
+1. `hub/adapters/dsh.ts` 生成 patch 时把 `PATH`、`PATHEXT`、`COMSPEC`、`SystemRoot` 等 15 个变量
+   写进 MCP server 的 `env`（取值大小写不敏感，因为 Windows 上 `{...process.env}` 展开后键名是全大写的）；
+2. `hub/core/git.ts` 新增 `resolveGitBinary()`：PATH 探不到就退到已知绝对安装路径，`submit` 不再硬依赖 PATH。
+
+实测（2026-10-29 21:33）：把 `dsh-01` 改回 `mcp_inject: dsh-patch`，派卡 `T-000005`，
+**50 秒**到 `submitted`，worker 日志记录 `hub.submit` 返回 `scope_clean: true` 且无 ENOENT，
+随后 weiyang 交叉审查通过、合并为 `a1bb4351`。**`dsh-01` 现在不必再走 file-protocol 绕行。**
 
 ### 1.5 判据
 
 ```powershell
-# 1) 自检脚本前两条：seat 目录存在 + card 是 file-protocol
+# 1) 自检脚本前两条：seat 目录存在 + dsh-01 有可用通道（file-protocol，或修复后的 mcp）
 powershell -NoProfile -ExecutionPolicy Bypass -File docs/CHECK-ENVIRONMENT.ps1
 
 # 2) 硬判据：卡能走完 claimed → submitted → merged

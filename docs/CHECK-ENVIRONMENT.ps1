@@ -205,11 +205,12 @@ if (-not $seatExists) {
 }
 
 # ---------------------------------------------------------------------------
-# 2. dsh-01 卡片必须是 file-protocol
+# 2. dsh-01 有可用通道：file-protocol，或修复后的 dsh-patch
 #
-# MCP 通道下平台生成的 dsh-hub.patch.yml 只给 hub MCP server 三个环境变量、没有
-# PATH；hub.submit 内部 spawnSync('git') 因此 ENOENT，卡永远提交不上去。改用
-# file-protocol 后 worker 走 `mesh submit`（在它自己的 shell 里，PATH 有 git）。
+# 历史上 MCP 通道下平台生成的 dsh-hub.patch.yml 只给 hub MCP server 三个环境变量、
+# 没有 PATH，hub.submit 内部 spawnSync('git') 因此 ENOENT，卡永远提交不上去。
+# 2026-10-29 已修（commit 830144f）：patch 现在带上 PATH/SystemRoot 等 15 个变量，
+# 且 hub/core/git.ts 的 resolveGitBinary() 有绝对路径兜底。两种通道都算通过。
 # ---------------------------------------------------------------------------
 $cardPath = Join-Path (Join-Path (Join-Path $ProjectDir '.mesh') 'agents') "$OfficeAgent.json"
 $cardInject = $null
@@ -228,11 +229,11 @@ try {
 if ($cardError) {
     Write-Check '2/4' 'dsh agent channel' $false @($cardError)
 } else {
-    $ok = ($cardInject -eq 'file-protocol')
+    $ok = ($cardInject -eq 'file-protocol') -or ($cardInject -eq 'dsh-patch')
     Write-Check '2/4' 'dsh agent channel' $ok @(
         "卡片: .mesh/agents/$OfficeAgent.json",
         "mcp_inject: $cardInject",
-        '要求: file-protocol（dsh-patch 会让 hub 的 submit 找不到 git）'
+        '要求: file-protocol 或 dsh-patch（后者自 830144f 起 patch 已带 PATH）'
     )
 }
 
