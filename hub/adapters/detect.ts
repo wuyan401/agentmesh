@@ -138,6 +138,46 @@ const ALL_ROLES: RoleId[] = [
   'lead',
 ]
 
+/**
+ * OpenCode's desktop app ships a CLI beside its Electron binary; it is usually not
+ * on PATH. Probe that install as well so `mesh agents detect` can find it.
+ */
+export function findOpenCode(ctx: DetectContext): string | null {
+  const fromEnv = ctx.env.MESH_OPENCODE_BIN
+  if (fromEnv && fileExists(fromEnv)) return fromEnv
+  const onPath = which('opencode')
+  if (onPath) return onPath
+  const appData = ctx.env.APPDATA
+  if (!appData) return null
+  const cliRoot = path.join(appData, 'ai.opencode.desktop', 'cli')
+  try {
+    const versions = fs
+      .readdirSync(cliRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+    for (const version of versions) {
+      const exe = path.join(cliRoot, version, 'opencode-cli.exe')
+      if (fileExists(exe)) return exe
+    }
+  } catch {
+    /* desktop app not installed */
+  }
+  return null
+}
+
+/** Env vars that would make a spawned CLI resume/attach to the user's desktop app. */
+const OPENCODE_STRIP_ENV = [
+  'OPENCODE_CLIENT',
+  'OPENCODE_TERMINAL',
+  'OPENCODE_CONFIG',
+  'OPENCODE_CONFIG_CONTENT',
+  'OPENCODE_CONFIG_DIR',
+  'OPENCODE_DISABLE_EMBEDDED_WEB_UI',
+  'OPENCODE_EXPERIMENTAL_FILEWATCHER',
+  'OPENCODE_EXPERIMENTAL_ICON_DISCOVERY',
+]
+
 function dshCard(command: string, bin: string, displayName: string, capabilities: RoleId[]): AgentCard {
   return {
     agent_id: 'dsh-01',
@@ -239,7 +279,8 @@ export function detectAgents(ctx: DetectContext): DetectedAgent[] {
     { id: 'opencode-01', cmd: 'opencode', display: 'OpenCode', kind: 'opencode', roles: ['frontend_dev', 'backend_dev', 'executor', 'lead'], inject: 'config-file' },
   ]
   for (const opt of optional) {
-    const found = which(opt.cmd)
+    const isOpenCode = opt.kind === 'opencode'
+    const found = isOpenCode ? findOpenCode(ctx) : which(opt.cmd)
     out.push({
       card: {
         agent_id: opt.id,
@@ -247,19 +288,26 @@ export function detectAgents(ctx: DetectContext): DetectedAgent[] {
         kind: opt.kind,
         enabled: Boolean(found),
         command: found ?? opt.cmd,
-        args: [],
-        capabilities: opt.roles,
+        // OpenCode V2 needs a private server for `OPENCODE_CONFIG` to be read, and
+        // a headless run must not stop at a permission prompt.
+        args: isOpenCode ? ['run', '--standalone', '--auto'] : [],
+        capabilities: isOpenCode ? ALL_ROLES : opt.roles,
         concurrency: 2,
         cost_tier: 2,
         transport: 'mcp',
         mcp_inject: opt.inject,
         extra_env: {},
-        strip_env: [],
+        strip_env: isOpenCode ? OPENCODE_STRIP_ENV : [],
         prompt_mode: 'arg',
-        prompt_flag: opt.kind === 'opencode' ? 'run' : '-p',
+        // The prompt is appended after the subcommand: `opencode run ... <prompt>`.
+        prompt_flag: isOpenCode ? null : '-p',
         headless_args: [],
         ttl_seconds: 1800,
-        notes: found ? 'detected on PATH' : 'not installed on this machine; recipe kept for portability',
+        notes: found
+          ? isOpenCode
+            ? 'OpenCode CLI; hub MCP via OPENCODE_CONFIG + --standalone'
+            : 'detected on PATH'
+          : 'not installed on this machine; recipe kept for portability',
       },
       available: Boolean(found),
       source: found ?? 'not found',

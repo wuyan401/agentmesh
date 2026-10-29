@@ -212,7 +212,9 @@ export class MeshStore {
 
   listSessions(): SessionCard[] {
     const out: SessionCard[] = []
-    for (const file of listFiles(this.paths.sessionsDir, '.json')) {
+    // Shallow on purpose: `.mesh/sessions/<id>/` holds per-session scratch files
+    // (generated MCP overlays, prompts), and one of those can be JSON too.
+    for (const file of listFilesShallow(this.paths.sessionsDir, '.json')) {
       const card = readJsonIfExists<SessionCard>(file)
       if (card) out.push(card)
     }

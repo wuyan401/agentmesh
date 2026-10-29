@@ -48,7 +48,14 @@ function mcpJsonOverlay(ctx: SpawnContext): { args: string[]; artifacts: string[
   return { args: ['--mcp-config', file], artifacts: [file] }
 }
 
-/** OpenCode style: a config document pointed at by an env var. */
+/**
+ * OpenCode style: a V2 config document pointed at by `OPENCODE_CONFIG`.
+ *
+ * V2 nests servers under `mcp.servers` and uses `disabled` (there is no
+ * `enabled` field). The env var is only read by a private server, so the launch
+ * recipe for OpenCode must pass `--standalone`; otherwise the shared desktop
+ * service keeps its own config and the hub tools never appear.
+ */
 function configFileOverlay(ctx: SpawnContext): { env: Record<string, string>; artifacts: string[] } {
   const file = path.join(ctx.scratch, 'opencode.json')
   fs.mkdirSync(ctx.scratch, { recursive: true })
@@ -56,7 +63,17 @@ function configFileOverlay(ctx: SpawnContext): { env: Record<string, string>; ar
   const body = {
     $schema: 'https://opencode.ai/config.json',
     mcp: {
-      hub: { type: 'local', command: [cfg.command, ...cfg.args], enabled: true, environment: cfg.env },
+      servers: {
+        hub: {
+          type: 'local',
+          command: [cfg.command, ...cfg.args],
+          environment: cfg.env,
+          // Keep hub tools as native tools instead of hiding them behind
+          // OpenCode's Code Mode wrapper: the platform prompt names hub.hello(),
+          // and a worker should not need a second indirection to find it.
+          codemode: false,
+        },
+      },
     },
   }
   fs.writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`)

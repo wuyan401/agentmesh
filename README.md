@@ -275,7 +275,7 @@ agentmesh/
 4. `mesh assign <task> --agent my-cli-01 --wait` 实跑一次，确认**超集性**：
    原生工具都能用 + hub 工具能调。适配器的验收标准就是这一条。
 
-现成的配方：`dsh`（MCP via `--patch`）、`hermes`（文件协议）、`claude-code`（`--mcp-config`）、`codex`（`-c mcp_servers.*`）、`opencode`（config 文档）、`generic`（任意一次性 CLI）。
+现成的配方：`dsh`（MCP via `--patch`）、`hermes`（文件协议）、`claude-code`（`--mcp-config`）、`codex`（`-c mcp_servers.*`）、`opencode`（V2 `mcp.servers` + `OPENCODE_CONFIG`，需 `--standalone`）、`generic`（任意一次性 CLI）。
 
 ---
 
@@ -300,6 +300,13 @@ agentmesh/
 
 **Hermes 很慢？**
 它每回合有 ~50s 启动开销。默认 `cost_tier: 3`，调度器会优先把活派给更快的 Agent，只在需要深度时用它。
+
+**OpenCode 的 hub 工具为什么没出现？**
+OpenCode V2 把 MCP 服务器放在 `mcp.servers` 下（不是 `mcp.<name>`），而且 `OPENCODE_CONFIG` 只对**私有服务器**生效。
+所以卡片必须用 `opencode run --standalone --auto`；否则会连到桌面的共享服务，配置和 `MESH_SESSION_ID` 都传不进去。
+`mesh agents detect` 会找到桌面版自带的 `opencode-cli.exe`，`mesh agents verify` 可验证超集性。
+无头运行还会用全局默认模型；把卡片参数固定成 `--model deepseek/deepseek-flash`（换成你要的 provider/model），
+避免默认落到免费小模型后在工具间反复试探。
 
 **任务卡住了？**
 ```bash

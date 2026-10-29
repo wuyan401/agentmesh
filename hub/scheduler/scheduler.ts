@@ -784,9 +784,17 @@ export class Scheduler {
     live.turns += 1
     this.hub.store.saveSession(live)
     const result = runForeground(plan, logFile, opts.timeoutMs ?? 900_000)
-    this.hub.identity.closeSession(sessionId, 'exited', { code: result.code, note: 'turn finished' })
+    // Record the spawn *before* closing: markSpawned re-reads the card and flips
+    // it back to `active`, so doing it afterwards would resurrect a finished turn
+    // (and leave a ghost session with the CLI's pid in the live list).
+    // There is no child pid to record here — spawnSync only returns the exit code.
+    const record = this.markSpawned(session, agent, task, plan, null, logFile)
+    this.hub.identity.closeSession(sessionId, 'exited', {
+      code: result.code,
+      note: result.timedOut ? 'turn timed out' : 'turn finished',
+    })
     return {
-      record: this.markSpawned(session, agent, task, plan, process.pid, logFile),
+      record,
       stdout: result.stdout,
       stderr: result.stderr,
       code: result.code,

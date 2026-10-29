@@ -165,6 +165,59 @@ test('adapter cli-generic: writes an MCP config file for claude-code style clien
   }
 })
 
+test('adapter opencode: V2 config nests hub under mcp.servers and keeps tools native', () => {
+  const h = createHarness('adapter-opencode')
+  try {
+    addAgent(h.hub, 'opencode-01', ['backend_dev'], {
+      kind: 'opencode',
+      command: 'opencode',
+      args: ['run', '--standalone', '--auto'],
+      transport: 'mcp',
+      mcp_inject: 'config-file',
+    })
+    const ctx = ctxFor(h, 'opencode-01')
+    const plan = cliGenericAdapter.build(ctx)
+    const cfgFile = plan.env['OPENCODE_CONFIG']
+    assert.ok(cfgFile, 'the launch recipe must point OPENCODE_CONFIG at the overlay')
+    const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')) as {
+      mcp: {
+        hub?: unknown
+        servers: Record<string, { type: string; command: string[]; environment: Record<string, string>; codemode?: boolean }>
+      }
+    }
+    // V2 nests servers; a bare `mcp.hub` is silently ignored by the client.
+    assert.equal(cfg.mcp.hub, undefined)
+    const hub = cfg.mcp.servers['hub']!
+    assert.equal(hub.type, 'local')
+    assert.equal(hub.codemode, false, 'hub tools must be native, not hidden behind Code Mode')
+    assert.match(hub.command.join(' '), /hub[\\/]mcp[\\/]server\.ts/)
+    assert.equal(hub.environment['MESH_SESSION_ID'], ctx.session.session_id)
+    // With prompt_flag null the prompt is the final argv entry: `opencode run ... <prompt>`.
+    assert.equal(plan.args.at(-1), 'prompt body')
+    assert.equal(plan.injection.includes('OPENCODE_CONFIG'), true)
+    assert.equal(toolPrefixFor(ctx.agent), 'hub_')
+  } finally {
+    h.cleanup()
+  }
+})
+
+test('store: a JSON scratch file inside a session bundle is not parsed as a session card', () => {
+  const h = createHarness('session-scratch-json')
+  try {
+    addAgent(h.hub, 'dev', ['backend_dev'])
+    const session = newSession(h.hub, 'dev', 'backend_dev')
+    const scratch = h.hub.paths.sessionScratch(session.session_id)
+    fs.mkdirSync(scratch, { recursive: true })
+    fs.writeFileSync(path.join(scratch, 'opencode.json'), '{"mcp":{"servers":{}}}\n')
+    assert.deepEqual(
+      h.hub.store.listSessions().map((s) => s.session_id),
+      [session.session_id],
+    )
+  } finally {
+    h.cleanup()
+  }
+})
+
 test('prompt: changes per role — a supervisor is not told to commit and submit', () => {
   const h = createHarness('prompt-roles')
   try {
