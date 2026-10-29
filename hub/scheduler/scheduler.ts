@@ -619,9 +619,36 @@ export class Scheduler {
       `- 改动文件：${(task.submission?.files ?? []).join(', ')}`,
       '',
       '裁决时：逐条 acceptance 给出 pass/evidence，然后调用 verdict。发现越界文件（scope.write 之外）要指出来——合并终审会独立再查一遍，但你的审查应该先发现它。',
+      '',
+      this.peerReviewHint(task),
     ]
       .filter(Boolean)
       .join('\n')
+  }
+
+  /** The mission a card belongs to: the parent link, or the legacy `mission:` tag. */
+  private missionOfTask(task: TaskCard): string | null {
+    if (task.parent) return task.parent
+    const tag = (task.tags ?? []).find((t) => t.startsWith('mission:'))
+    return tag ? tag.slice('mission:'.length) : null
+  }
+
+  /**
+   * Ask the reviewer to score the implementer before it rules.
+   *
+   * The reviewer is the only participant that read the diff line by line, so its
+   * opinion is the one worth recording. Without this the platform shipped a fully
+   * working rate_peer tool that nobody ever called — every profile's peer_reviews
+   * stayed empty, and the "agents rate each other" requirement had no evidence.
+   */
+  private peerReviewHint(task: TaskCard): string {
+    const missionId = this.missionOfTask(task)
+    const implementer = task.implementer_agent
+    if (!missionId || !implementer) return ''
+    return [
+      `裁决前先给实现者 ${implementer} 打分：\`hub.rate_peer("${implementer}", "${missionId}", { quality, cooperation, evidence, speed })\``,
+      '每个维度 0-100。你刚逐条看过对方的活，这个评价比事后回忆准得多；写完再调 verdict。',
+    ].join('\n')
   }
 
   /** Build the context package and return its absolute path (agents live in a sandbox cwd). */

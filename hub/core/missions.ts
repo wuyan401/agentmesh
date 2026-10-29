@@ -364,6 +364,10 @@ export class MissionService {
             depends_on: dependsOn,
             publish: false, // dispatch_mission is what starts execution (spec §1.3)
             created_by: identity.session.session_id,
+            // Back-link the card to its mission. The task view and peer review both
+            // read this; without it a card only carried a `mission:` tag and had no
+            // parent, so anything that walked upward from a task hit a dead end.
+            parent: missionId,
             tags: [`mission:${missionId}`],
             preferred_agent: item.agent ?? null,
           },
@@ -642,9 +646,12 @@ export class MissionService {
       lines.push('')
       lines.push('1. 读 `get_mission(mission_id)` 看每张卡的产出、审查 evidence、合并 commit。')
       lines.push('2. 有缺口就再开卡（`create_task`）或打回；从整体看它是否真的满足用户原话。')
-      lines.push('3. `final_verdict(mission_id, approved, notes, rejects?)`：不通过时 `rejects` 点名要改的卡；')
+      lines.push(
+        '3. 给每个参与者打分：`hub.rate_peer(agent_id, mission_id, { quality, cooperation, evidence, speed })`——你整合时逐一看了他们的产出，这个判断有依据；每个维度 0-100，评完再裁决。',
+      )
+      lines.push('4. `final_verdict(mission_id, approved, notes, rejects?)`：不通过时 `rejects` 点名要改的卡；')
       lines.push('   若是拆解本身有问题，rejects 留空（mission 会回到 planning 重拆）。')
-      lines.push('4. 通过后 `write_report(mission_id, markdown)` 写给用户看的报告（它会被存成报告文件）。')
+      lines.push('5. 通过后 `write_report(mission_id, markdown)` 写给用户看的报告（它会被存成报告文件）。')
     }
     lines.push('')
     lines.push(`已完成：${view.progress.merged}/${view.progress.total} 张卡合并。`)

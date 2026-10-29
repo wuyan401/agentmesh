@@ -262,6 +262,9 @@ export class ContextBuilder {
     lines.push('- 只写 scope.write 内的路径；越界会在合并终审被整单打回。')
     lines.push('- 有疑问 `hub.request_clarification`；要越界 `hub.escalate`（不中断你）。')
     lines.push('- 不知道队友是谁：`hub.list_teammates(mission_id)`，不要猜。')
+    lines.push(
+      '- 交付或审查结束后给同 mission 的队友打分：`hub.rate_peer(agent_id, mission_id, { quality, cooperation, evidence, speed })`——每项 0-100，一人一 mission 一次（重评覆盖）。同 mission 指的是你参与过的那个，别评没合作过的人。',
+    )
     lines.push('- 你是 lead 时额外可用：`plan_mission` / `dispatch_mission` / `final_verdict` / `write_report`。')
     return lines.join('\n')
   }
