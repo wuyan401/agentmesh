@@ -1,0 +1,245 @@
+{
+  "schema": "agentmesh.evidence.ui-publish/1",
+  "evidence_id": "M-000003",
+  "subject": "POST /api/missions 发布链路：从观察台前端发出 M-000003，到 lead 会话 S-000030 真实启动",
+  "collected_at": "2026-10-29T16:05:04.721Z",
+  "collected_by": {
+    "session_id": "S-000031",
+    "agent_id": "weiyang",
+    "role": "backend_dev",
+    "task": "T-000007"
+  },
+  "sources": {
+    "mission": {
+      "path": ".mesh/missions/M-000003.json",
+      "sha256": "1926128a4e185eaba3dc3aa9fb4f76c3bf25303d154849dab094414daa887c7e",
+      "bytes": 1502
+    },
+    "lead_session": {
+      "path": ".mesh/sessions/S-000030.json",
+      "sha256": "d19579dc61c2ae811b1aa4de419bf665b8cc14275ae68b887766cf3771fa9fbd",
+      "bytes": 570
+    },
+    "audit": {
+      "path": ".mesh/audit/events.jsonl",
+      "sha256": "d8aa6f65ec7f178f582169e8abb9d027a579949f6b23e532b75b4ee583b9cfb7",
+      "bytes": 42488
+    },
+    "contract": {
+      "path": "hub/web/server.ts"
+    },
+    "test": {
+      "path": "tests/unit/web-missions-api.test.ts"
+    }
+  },
+  "mission": {
+    "mission_id": "M-000003",
+    "title": "�۲�̨������֤",
+    "brief": "�ӿ��ӻ�ǰ�˷�������֤ lead �Ự��ı�����",
+    "acceptance": [
+      "�ֿ���� UI-PUBLISH-CHECK.md"
+    ],
+    "lead_agent": "dsh-01",
+    "lead_session": "S-000030",
+    "status": "executing",
+    "source": "platform",
+    "parent_mission": null,
+    "tasks": [
+      "T-000007",
+      "T-000008"
+    ],
+    "teammates": [
+      "dsh-01",
+      "weiyang"
+    ],
+    "created_at": "2026-10-29T15:38:35.376Z",
+    "updated_at": "2026-10-29T16:03:17.168Z"
+  },
+  "lead_session": {
+    "session_id": "S-000030",
+    "agent_id": "dsh-01",
+    "role": "lead",
+    "mission": "M-000003",
+    "spawned_by": "web.mission",
+    "mode": "platform",
+    "lifespan": "ephemeral",
+    "is_lead": true,
+    "status": "exited",
+    "pid": 38620,
+    "created_at": "2026-10-29T15:38:35.384Z",
+    "hello_at": "2026-10-29T15:38:50.620Z",
+    "turns": 1
+  },
+  "audit": {
+    "source": ".mesh/audit/events.jsonl",
+    "selection": "event=mission.created (mission_id=M-000003) + event=session.created (session_id=S-000030) + event=mission.lead_session (mission_id=M-000003)",
+    "raw_lines": [
+      "{\"at\":\"2026-10-29T15:38:35.379Z\",\"event\":\"mission.created\",\"mission_id\":\"M-000003\",\"title\":\"�۲�̨������֤\",\"lead_agent\":\"dsh-01\",\"source\":\"platform\",\"by\":\"S-000007\",\"parent_mission\":null}",
+      "{\"at\":\"2026-10-29T15:38:35.386Z\",\"event\":\"session.created\",\"session_id\":\"S-000030\",\"agent_id\":\"dsh-01\",\"role\":\"lead\",\"task\":null,\"spawned_by\":\"web.mission\",\"lifespan\":\"ephemeral\",\"mission\":\"M-000003\",\"is_lead\":true}",
+      "{\"at\":\"2026-10-29T15:38:35.390Z\",\"event\":\"mission.lead_session\",\"mission_id\":\"M-000003\",\"session_id\":\"S-000030\",\"agent_id\":\"dsh-01\"}"
+    ],
+    "line_numbers": {
+      "mission.created": 171,
+      "session.created": 172,
+      "mission.lead_session": 173
+    },
+    "records": {
+      "mission.created": {
+        "at": "2026-10-29T15:38:35.379Z",
+        "event": "mission.created",
+        "mission_id": "M-000003",
+        "title": "�۲�̨������֤",
+        "lead_agent": "dsh-01",
+        "source": "platform",
+        "by": "S-000007",
+        "parent_mission": null
+      },
+      "session.created": {
+        "at": "2026-10-29T15:38:35.386Z",
+        "event": "session.created",
+        "session_id": "S-000030",
+        "agent_id": "dsh-01",
+        "role": "lead",
+        "task": null,
+        "spawned_by": "web.mission",
+        "lifespan": "ephemeral",
+        "mission": "M-000003",
+        "is_lead": true
+      },
+      "mission.lead_session": {
+        "at": "2026-10-29T15:38:35.390Z",
+        "event": "mission.lead_session",
+        "mission_id": "M-000003",
+        "session_id": "S-000030",
+        "agent_id": "dsh-01"
+      }
+    },
+    "at": {
+      "mission.created": "2026-10-29T15:38:35.379Z",
+      "session.created": "2026-10-29T15:38:35.386Z",
+      "mission.lead_session": "2026-10-29T15:38:35.390Z"
+    },
+    "clock_skew": {
+      "session.created_vs_session_card_ms": 2,
+      "note": "会话卡先落盘、审计行后追加，两者时间戳相差毫秒级。归档保留各自原值，不做事后对齐。"
+    }
+  },
+  "contract": {
+    "endpoint": "POST /api/missions",
+    "success_status": 201,
+    "where": [
+      {
+        "file": "hub/web/server.ts",
+        "line": 459,
+        "what": "路由分派：url.pathname === \"/api/missions\" && req.method === \"POST\" → publishMission(hub, req, res)"
+      },
+      {
+        "file": "hub/web/server.ts",
+        "line": 166,
+        "what": "async function publishMission(...) 定义"
+      },
+      {
+        "file": "hub/web/server.ts",
+        "line": 211,
+        "what": "sendJson(201, { ... }) —— 成功响应体起点，字段逐一列到第 219 行"
+      }
+    ],
+    "fields": [
+      {
+        "field": "mission_id",
+        "line": 212,
+        "value": "mission.mission_id",
+        "note": "形如 M-000003"
+      },
+      {
+        "field": "lead_session_id",
+        "line": 213,
+        "value": "leadSessionId",
+        "note": "内置 lead 时为 null"
+      },
+      {
+        "field": "lead_turn",
+        "line": 214,
+        "value": "leadTurn",
+        "note": "\"spawned\" 或 \"deferred: <code>\"；内置 lead 为 \"not_applicable\""
+      },
+      {
+        "field": "status",
+        "line": 215,
+        "value": "mission.status",
+        "note": "创建后为 intake 系状态"
+      },
+      {
+        "field": "lead_agent",
+        "line": 216,
+        "value": "mission.lead_agent"
+      },
+      {
+        "field": "source",
+        "line": 217,
+        "value": "mission.source",
+        "note": "该入口固定写入 platform（第 184 行）"
+      },
+      {
+        "field": "created_by",
+        "line": 218,
+        "value": "session_id",
+        "note": "humanIdentity(hub, \"planner\") 返回的操作人会话"
+      }
+    ],
+    "field_count": 7,
+    "observed": {
+      "note": "对本次发布链路的观测值：M-000003 由 POST /api/missions 创建，source=platform，lead_agent=dsh-01，lead_session_id=S-000030，created_by=S-000007（与 audit 中 mission.created 的 by 字段一致）。",
+      "mission_id": "M-000003",
+      "lead_session_id": "S-000030",
+      "lead_agent": "dsh-01",
+      "source": "platform",
+      "created_by": "S-000007",
+      "status_at_creation": "intake"
+    }
+  },
+  "test_run": {
+    "command": "node --test tests/unit/web-missions-api.test.ts",
+    "cwd": ".mesh/worktrees/T-000007",
+    "node_version": "v26.7.0",
+    "exit_code": 0,
+    "at": "2026-10-29T16:05:04.719Z",
+    "counts": {
+      "tests": 4,
+      "pass": 4,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "duration_ms": 4240.6164
+    },
+    "output": "✔ web: POST /api/missions rejects a payload with no title (400, says which field) (1121.8427ms)\n✔ web: POST /api/missions creates the mission and its lead session, source=platform (924.324ms)\n✔ web: POST /api/missions refuses a lead without the lead capability (400, names the agent) (956.0861ms)\n✔ web: POST /api/missions keeps a builtin lead session-less (HTTP stays read-mostly) (942.23ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 4240.6164\n"
+  },
+  "raw": {
+    "source": ".mesh/missions/M-000003.json",
+    "title": "�۲�̨������֤",
+    "brief": "�ӿ��ӻ�ǰ�˷�������֤ lead �Ự��ı�����",
+    "acceptance": [
+      "�ֿ���� UI-PUBLISH-CHECK.md"
+    ],
+    "note": "title/brief/acceptance 是从 .mesh/missions/M-000003.json 按字节原样复制的、平台里存的原串（含 U+FFFD 替换字符，未做任何修复或转义还原），未见二次编码。",
+    "title_codepoints": [
+      "U+FFFD",
+      "U+06F2",
+      "U+FFFD",
+      "U+0328",
+      "U+FFFD",
+      "U+FFFD",
+      "U+FFFD",
+      "U+FFFD",
+      "U+FFFD",
+      "U+FFFD",
+      "U+05A4"
+    ],
+    "byte_identical_to_source": {
+      "title": true,
+      "brief": true,
+      "acceptance": true
+    }
+  }
+}
