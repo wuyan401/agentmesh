@@ -201,4 +201,50 @@ shared node（必须 Medium）       exists=True   Mandatory Label\Medium Mandat
 
 ## 真实卡验证（2026-10-29）
 
-（见下一节：这张卡由 `dsh-01` 实现、`weiyang` 交叉审查、平台 scope 终审合并。）
+配置：只启用 `dsh-01`（DSH worker）与 `weiyang`（Hermes，交叉审查），其余 agent 全部 disabled。
+
+| 环节 | 结果 |
+|---|---|
+| 建卡（我定 scope） | `T-000004`，scope = `docs/CHECK-ENVIRONMENT.ps1`，7 条验收 |
+| 派发 | `mesh assign T-000004 --agent dsh-01` → session `S-000017` 绑定沙箱 `.mesh/worktrees/T-000004` |
+| 实现 | dsh-01 跑完一轮（约 8.5 分钟），commit `3c0d9f2`，`submit` 成功 |
+| 交叉审查 | `mesh up --once` 自动派给 **weiyang**（session `S-000018`，role=supervisor）→ `R-0004` **approved**，7 条验收逐条 True |
+| 合并 | `mesh up --once` → **`a74600f4`（strict）**，产物落到 main 的 `docs/CHECK-ENVIRONMENT.ps1` |
+
+产物自检（我在 main 上直接跑）：
+
+```
+$ powershell -NoProfile -File docs/CHECK-ENVIRONMENT.ps1
+[1/3] DSH profiles (Low)                PASS   D:\AI\DSH\profiles → Low Mandatory Level
+[2/3] shared node (Medium)              PASS   ...\node.exe → Medium Mandatory Level
+[3/3] project dir (HP F/M)              PASS   .mesh\worktrees\T-000004 → HP:(F)
+SUMMARY: 3/3 通过
+PASS
+exit=0
+```
+
+### 这一轮踩到的第 4 个坑（本轮新发现，**未修**）
+
+**现象**：`dsh-01` 的工人会话能写文件、能用 `git`（绝对路径下 `Test-Path` 为真），但调用
+`hub.submit` 时报 `spawnSync git ENOENT`，卡在 `in_progress` 提交不上去。
+
+**根因**：dsh 席位默认 `mcp_inject: dsh-patch`，平台生成的 `dsh-hub.patch.yml` 里给 MCP server
+写的是**只有三个环境变量**的 env：
+
+```yaml
+env:
+  MESH_ROOT: "..."
+  MESH_SESSION_ID: "S-0000xx"
+  MESH_AGENT_ID: "dsh-01"
+```
+
+DSH 拉起这个 stdio MCP server 时，**进程的 PATH 没有传进去**；而 hub 的 `submit` 内部要
+`spawnSync('git', ...)`，找不到 git 就 ENOENT。所以 MCP 通道下的 submit 在这台机器上必然失败。
+
+**本轮的处理**（绕开，不改平台代码）：把 `dsh-01` 的卡片从 `mcp_inject: dsh-patch` 换成
+`file-protocol`，让 worker 走 `mesh submit`（在它自己的 shell 里跑，shell 的 PATH 有 git），
+于是整条链通了。
+
+**建议的正解**（属于平台代码，我没有动）：在 `hub/adapters` 生成 patch 时把 `PATH` 一起写进
+MCP server 的 env，或者让 MCP server 的 `submit` 不依赖 PATH（绝对路径解析 git）。
+
