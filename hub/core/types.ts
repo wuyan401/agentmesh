@@ -207,6 +207,11 @@ export interface AgentCard {
   prompt_flag: string | null
   /** Extra CLI arguments for headless one-shot operation. */
   headless_args: string[]
+  /**
+   * Optional subcommand inserted *after* `args` and *before* `headless_args`
+   * (e.g. OpenCode v2 requires `opencode --auto run --model X "<prompt>"`).
+   */
+  subcommand?: string
   /** Per-spawn hard timeout. */
   ttl_seconds: number
   /** Optional notes shown by `mesh agents doctor`. */

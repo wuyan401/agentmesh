@@ -28,7 +28,7 @@
     要检查注入方式的 agent id。默认 dsh-01。
 
 .PARAMETER NodeExe
-    共享 node 的路径。默认 D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe。
+    共享 node 的路径。默认 <HERMES_HOME>\tools\node-26.7.0-win32-x64\node.exe。
     换机器 / 换安装位置时用参数或 MESH_SHARED_NODE 环境变量覆盖。
 
 .PARAMETER ProjectDir
@@ -38,11 +38,11 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File docs/CHECK-ENVIRONMENT.ps1
 
 .EXAMPLE
-    powershell -NoProfile -ExecutionPolicy Bypass -File docs/CHECK-ENVIRONMENT.ps1 -ProjectDir D:\AI\workspace\mesh-workspace
+    powershell -NoProfile -ExecutionPolicy Bypass -File docs/CHECK-ENVIRONMENT.ps1 -ProjectDir <WORKSPACE>\mesh-workspace
 
 .NOTES
     已知边界：Low 完整性的 DSH worker 读不了带 AppContainer package-SID ACE 的
-    目录（D:\AI\Hermes\tools\* 就是），所以这条 node 检查要在普通（非受限令牌）
+    目录（<HERMES_HOME>\tools\* 就是），所以这条 node 检查要在普通（非受限令牌）
     PowerShell 里跑才是可信的；在 worker 沙箱里它会如实报 FAIL（fail closed）。
 #>
 [CmdletBinding()]
@@ -50,7 +50,7 @@ param(
     [string]$Seat = 'headless',
     [string]$DshHome = $env:DSH_HOME,
     [string]$OfficeAgent = 'dsh-01',
-    [string]$NodeExe = $(if ($env:MESH_SHARED_NODE) { $env:MESH_SHARED_NODE } else { 'D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe' }),
+    [string]$NodeExe = $(if ($env:MESH_SHARED_NODE) { $env:MESH_SHARED_NODE } else { '<HERMES_HOME>\tools\node-26.7.0-win32-x64\node.exe' }),
     [string]$ProjectDir = ''
 )
 
@@ -168,7 +168,7 @@ function Write-Check {
 # ---------------------------------------------------------------------------
 # 1. DSH seat 目录：<DSH_HOME 或 ~/.dsh>/profiles/<seat>
 #
-# 这里**不**检查 D:\AI\DSH\profiles：那个路径既不是 CLI 的 home，DSH 也从没往
+# 这里**不**检查 <DSH_HOME>\profiles：那个路径既不是 CLI 的 home，DSH 也从没往
 # 里写过。CLI（node apps/cli/lib/bin.js --profile <seat>）的 home 由
 # packages/util/home-paths 解析：$DSH_HOME 优先，未设则 ~/.dsh。
 # ---------------------------------------------------------------------------
@@ -241,7 +241,7 @@ if ($cardError) {
 # ---------------------------------------------------------------------------
 # 2. 共享 node：必须是 Medium Mandatory Level
 #
-# 文档指定的共享 node 在 D:\AI\Hermes\tools\node-<ver>\node.exe。注意：Low 完整性
+# 文档指定的共享 node 在 <HERMES_HOME>\tools\node-<ver>\node.exe。注意：Low 完整性
 # 的进程读不了带 AppContainer package-SID ACE 的目录（node 这棵树就是），因此
 # worker 沙箱里的 icacls 会 Access denied —— 那是访问边界，不是文件缺失，也不能
 # 当作 Medium 的证据；这里一律 fail closed，请在普通 PowerShell 里复核。

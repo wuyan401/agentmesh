@@ -1,7 +1,7 @@
 # AgentMesh V2 交付报告
 
 > 交付时间：2026-10-29 04:45 · 补课时间：2026-10-29 18:00–18:30 · 施工：DSH（5 个里程碑）· 验收：未央（逐里程碑亲手实测）
-> 仓库：`D:\AI\workspace\dsh\agentmesh`
+> 仓库：`<PROJECT>`
 
 ## 一句话结论
 
@@ -61,7 +61,7 @@ cat .mesh/HISTORY.md                         # 协作史
 
 ## 我知道的坑（一条不藏）
 
-1. **worker 在沙箱内跑不了 node**（**已修复，见「补课记录 1」**）。DSH 的沙箱给进程打 Low 完整性标签，而 node 在 `D:\AI\Hermes\tools\` 是 Medium，
+1. **worker 在沙箱内跑不了 node**（**已修复，见「补课记录 1」**）。DSH 的沙箱给进程打 Low 完整性标签，而 node 在 `<HERMES_HOME>\tools\` 是 Medium，
    所以 worker 只能静态自验。给 worker 配了 Low 的独立副本 + PATH 优先注入，实测 worker/审查者/lead 三个会话都能 `node --version`。
    **不要再对 Hermes 那份 node.exe 做降级**：那会让整机 node 都写不了 Medium 目录。
 
@@ -73,7 +73,7 @@ cat .mesh/HISTORY.md                         # 协作史
    audit 里能看到 `mission.created(source=chat)` / `session.spawned` / `mission.planned`。
    补充：`mesh talk` 在**非 tty 的 stdio** 下会让 DSH 直接退出（打印 `stdin is not a tty`），要在交互 shell 或可写日志的前提下用。
 
-4. **目录 ACL 不规范的会被沙箱挡住**。`D:\AI\workspace` 有 `HP:(OI)(CI)(F)` 所以正常；
+4. **目录 ACL 不规范的会被沙箱挡住**。`<WORKSPACE>` 有 `HP:(OI)(CI)(F)` 所以正常；
    我误建的 `D:\tmp` 只有继承的 `Users:(RX)`，worker 每次 `pwsh` 都失败，agent 会烧掉几千 token 才发现。
    `.tools/m5-fixture.py` 现在会先跑 `icacls` 自检。
 
@@ -97,11 +97,11 @@ git revert c920859
 
 ```bash
 # 1) worker 的 node 副本：删掉目录即可，代码会自动回退到 Hermes 自己的 node（workerNodeDir 有回退分支）
-rm -rf "D:/AI/workspace/.tools/node"
+rm -rf "<WORKSPACE>/.tools/node"
 
 # 3) 状态文件：加锁只在 .tools（不入版本库的验收工具链），回退只需还原写入方
 #    auto-advance.py 的旧实现见 git 之外的历史；当前损坏件与还原件在：
-#    D:\AI\Hermes\cache\agentmesh-v2\state.json.damaged-20261029-1815.bak
+#    <HERMES_HOME>\cache\agentmesh-v2\state.json.damaged-20261029-1815.bak
 ```
 
 后台进程（都已确认可停）：
@@ -136,8 +136,8 @@ powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='py
 **做法**：给 worker 一份**自己的**副本，Hermes 用自己那份不受影响。
 
 ```bash
-cp "D:/AI/Hermes/tools/node-26.7.0-win32-x64/node.exe" "D:/AI/workspace/.tools/node/node.exe"
-icacls "D:\AI\workspace\.tools\node\node.exe" /setintegritylevel L
+cp "<HERMES_HOME>/tools/node-26.7.0-win32-x64/node.exe" "<WORKSPACE>/.tools/node/node.exe"
+icacls "<WORKSPACE>\.tools\node\node.exe" /setintegritylevel L
 # 副本：Mandatory Label\Low Mandatory Level:(NW)，实测 v26.7.0
 ```
 
@@ -145,13 +145,13 @@ icacls "D:\AI\workspace\.tools\node\node.exe" /setintegritylevel L
 `process.execPath` 所在目录，副本不存在时自动回退，所以换机器不会挂），`buildChildEnv` 把该目录
 放在 PATH 最前面、Hermes 的 node 目录作为兜底，并去重。`adapters/index.ts` 导出该函数。
 
-**实测**（`D:\AI\workspace\_m6proj`，真 mission 不是 fixture）：
+**实测**（`<WORKSPACE>\_m6proj`，真 mission 不是 fixture）：
 
 | 环节 | 会话 | 事实 |
 |---|---|---|
 | lead 拆解 | S-000002 dsh-01 | 拆 1 张卡 T-000001（「该 mission 只有一个产物」）|
 | 实现 | S-000003 dsh-02 | 在沙箱里 `node --version` → `v26.7.0`，写入 `node-version.txt` |
-| 审查 | S-000004 dsh-01 | 独立复跑，日志原文：「本机 `node` 路径 `D:\AI\workspace\.tools\node\node.exe`，`node --version` → `v26.7.0`」|
+| 审查 | S-000004 dsh-01 | 独立复跑，日志原文：「本机 `node` 路径 `<WORKSPACE>\.tools\node\node.exe`，`node --version` → `v26.7.0`」|
 | 整合终审 | S-000006 dsh-01 | 再复跑一次，同样得到 `.tools\node\node.exe` / `v26.7.0` / exit 0 |
 | 结果 | M-000001 completed | 3m36s，合并 `fd7d2f81`，`node-version.txt` = `v26.7.0`（8 字节，index 里是 LF）|
 
@@ -217,5 +217,5 @@ mission，平台把它当 lead 拉起」现在有会话级证据，不再只有�
 `milestone` 覆盖成 `M6`、`history` 清空、`reviewed.M5` 的签字只剩两个字段。已按
 `reviewed` 记录、`write-m5-verdict.py` 的原文与 git 提交重建（`history[].at` 由 verdict
 时间换算，其余为原值），损坏件留在
-`D:\AI\Hermes\cache\agentmesh-v2\state.json.damaged-20261029-1815.bak`，重建说明写在
+`<HERMES_HOME>\cache\agentmesh-v2\state.json.damaged-20261029-1815.bak`，重建说明写在
 文件里的 `_restored`。压测的 `[6]` 一条就是为此加的：以后任何测试都先证明自己没碰真实文件。

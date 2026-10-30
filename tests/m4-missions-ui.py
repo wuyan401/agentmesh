@@ -2,7 +2,7 @@
 
 只读：打开页面、量 DOM、截图，不点任何写操作（这个观察台本来也没有写操作）。
 跑法（PowerShell，先补 PATH）：
-    $env:PATH = "C:\\Users\\HP\\.agents\\bin;$env:PATH"; python tests/m4-missions-ui.py
+    $env:PATH = "<HOME>\\.agents\\bin;$env:PATH"; python tests/m4-missions-ui.py
 """
 import io
 import json

@@ -20,6 +20,20 @@ interface StdioServerConfig {
   env: Record<string, string>
 }
 
+/**
+ * Prefix for workers on the file channel. Kept short: it is prepended to every
+ * prompt, and the worker still gets the full protocol quickref from the context
+ * package. What it must not have to guess is *how* to call the hub.
+ */
+const FILE_PROTOCOL_PREFIX = `【通道：file-protocol — 你没有 MCP 的 hub.* 工具】
+用 shell 里的 \`mesh\` 命令完成协作，会话 ID 已在环境变量 MESH_SESSION_ID 里：
+  mesh hello                 # 第一步，必须先做
+  mesh task <T-id>           # 读任务卡
+  mesh claim <T-id>          # 领任务
+  mesh progress <T-id> --pct 50
+  mesh submit <T-id> --summary "做了什么、怎么验证的"
+不要跳过 mesh hello —— 没 hello 的会话没有权限，submit 会被拒绝。`
+
 function stdioConfig(ctx: SpawnContext): StdioServerConfig {
   return {
     command: process.execPath,
@@ -125,9 +139,17 @@ export const cliGenericAdapter: Adapter = {
         break
     }
 
-    const args = [...ctx.agent.args, ...extraArgs, ...ctx.agent.headless_args]
-    if (ctx.agent.prompt_flag) args.push(ctx.agent.prompt_flag, ctx.prompt)
-    else args.push(ctx.prompt)
+    const args = [...ctx.agent.args]
+    if (ctx.agent.subcommand) args.push(ctx.agent.subcommand)
+    args.push(...extraArgs, ...ctx.agent.headless_args)
+    // File-protocol workers have no hub MCP tools: name the CLI they must use,
+    // and name it before anything else in the prompt, or a capable agent burns a
+    // whole turn discovering that hub.hello() does not exist.
+    const prompt = ctx.agent.mcp_inject === 'file-protocol'
+      ? `${FILE_PROTOCOL_PREFIX}\n\n${ctx.prompt}`
+      : ctx.prompt
+    if (ctx.agent.prompt_flag) args.push(ctx.agent.prompt_flag, prompt)
+    else args.push(prompt)
 
     const plan: SpawnPlan = {
       command: ctx.agent.command,

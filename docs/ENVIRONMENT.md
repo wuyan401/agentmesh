@@ -17,10 +17,10 @@ worker 的卡片跑的是 `node apps/cli/lib/bin.js --profile headless`（CLI �
 
 ```
 $DSH_HOME/profiles/headless/          # 设了 DSH_HOME 时
-C:\Users\HP\.dsh\profiles\headless\   # 未设时（本机）
+<HOME>\.dsh\profiles\headless\   # 未设时（本机）
 ```
 
-这个目录**本来就可写**，不需要任何 `icacls /setintegritylevel`。实测：`C:\Users\HP\.dsh\profiles\headless\cordis.yml`
+这个目录**本来就可写**，不需要任何 `icacls /setintegritylevel`。实测：`<HOME>\.dsh\profiles\headless\cordis.yml`
 在 2026-10-29 19:49:42 被正常写入过，权限从一开始就是好的。
 
 ### 1.2 现象：worker 提交不上去
@@ -45,7 +45,7 @@ spawnSync git ENOENT
 
 ```yaml
 env:
-  MESH_ROOT: "D:/AI/workspace/dsh/agentmesh"
+  MESH_ROOT: "<PROJECT>"
   MESH_SESSION_ID: "S-0000xx"
   MESH_AGENT_ID: "dsh-01"
 ```
@@ -90,9 +90,9 @@ mesh task T-0000xx
 | home | 路径 | 谁在用 |
 |---|---|---|
 | CLI home | `$DSH_HOME` → 否则 `~/.dsh` | `node apps/cli/lib/bin.js --profile <seat>`（我们的 card） |
-| 桌面版 home | `D:\AI\DSH\apps\desktop\.desktop-build\development\home` | 桌面端应用自身 |
+| 桌面版 home | `<DSH_HOME>\apps\desktop\.desktop-build\development\home` | 桌面端应用自身 |
 
-**`D:\AI\DSH\profiles` 是误判产物**：那个目录存在期间一直是空的，DSH 从没往里写过，已删除。
+**`<DSH_HOME>\profiles` 是误判产物**：那个目录存在期间一直是空的，DSH 从没往里写过，已删除。
 排查时如果看到一条指向它的 `EPERM`，请当作**另一个现象**处理，别按本节修法去改它。
 
 另有一个到目前为止**原因未确认**的现象，仅记录：在 `DSH_HOME` 指向桌面版 home 的环境里拉起
@@ -111,25 +111,25 @@ Hermes 席位当 worker 时，进程能起但写不了自己的沙箱（它内�
 ### 根因
 
 - 受限令牌的 worker 拉起的 `node` 继承同样的令牌；
-- 全机共享的 `D:\AI\Hermes\tools\node-*\node.exe` 是 Medium、被很多进程共用 —— 动它的完整性
+- 全机共享的 `<HERMES_HOME>\tools\node-*\node.exe` 是 Medium、被很多进程共用 —— 动它的完整性
   等于给全机埋雷（实测：把它翻成 Low 之后，全机器 node 都写不了文件）。
 
 ### 修法
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "D:\AI\workspace\node-low" | Out-Null
-Copy-Item "D:\AI\Hermes\tools\node-*\node.exe" "D:\AI\workspace\node-low\node.exe"
-icacls "D:\AI\workspace\node-low\node.exe" /setintegritylevel L   # 只动这份副本
+New-Item -ItemType Directory -Force -Path "<WORKSPACE>\node-low" | Out-Null
+Copy-Item "<HERMES_HOME>\tools\node-*\node.exe" "<WORKSPACE>\node-low\node.exe"
+icacls "<WORKSPACE>\node-low\node.exe" /setintegritylevel L   # 只动这份副本
 # 再把 Hermes 卡片的 command 指向这份副本
 ```
 
-> ⚠️ **绝对不要**对 `D:\AI\Hermes\tools\node-*\node.exe` 执行 `/setintegritylevel`。
+> ⚠️ **绝对不要**对 `<HERMES_HOME>\tools\node-*\node.exe` 执行 `/setintegritylevel`。
 
 ### 判据
 
 ```powershell
-icacls "D:\AI\workspace\node-low\node.exe" | Select-String "Mandatory"   # 期望 Low
-icacls "D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe" | Select-String "Mandatory"  # 期望 Medium
+icacls "<WORKSPACE>\node-low\node.exe" | Select-String "Mandatory"   # 期望 Low
+icacls "<HERMES_HOME>\tools\node-26.7.0-win32-x64\node.exe" | Select-String "Mandatory"  # 期望 Medium
 ```
 
 现状：Hermes 席位当前只保留 `weiyang`（走文件协议），共享 node 仍是 **Medium** ✔。
@@ -150,21 +150,21 @@ icacls "D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe" | Select-String "Mand
 | 目录 | 完整性标签 | 关键 ACL |
 |---|---|---|
 | `D:\tmp` | （无，继承 Medium） | `BUILTIN\Users: ReadAndExecute`（继承，只读） |
-| `D:\AI\workspace\dsh\agentmesh` | （无，继承 Medium） | `NT AUTHORITY\Authenticated Users:(M)` ← **显式 Modify** |
+| `<PROJECT>` | （无，继承 Medium） | `NT AUTHORITY\Authenticated Users:(M)` ← **显式 Modify** |
 
 `D:\tmp` 只有继承来的只读授权，worker 拿不到写权。
 
 ### 修法
 
 ```powershell
-New-Item -ItemType Directory -Force -Path "D:\AI\workspace\<project>" | Out-Null
-icacls "D:\AI\workspace\<project>" /grant "HP:(OI)(CI)F"
+New-Item -ItemType Directory -Force -Path "<WORKSPACE>\<project>" | Out-Null
+icacls "<WORKSPACE>\<project>" /grant "HP:(OI)(CI)F"
 ```
 
 ### 判据
 
 ```powershell
-icacls "D:\AI\workspace\<project>" | Select-String "HP:|Authenticated Users"   # 期望 (F) 或 (M)
+icacls "<WORKSPACE>\<project>" | Select-String "HP:|Authenticated Users"   # 期望 (F) 或 (M)
 # 硬判据：worker 能在 .mesh/worktrees/<task>/ 里落盘并提交
 ```
 
@@ -186,13 +186,13 @@ $home2 = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
 Test-Path "$home2\profiles\headless\cordis.yml"
 
 # 2) dsh 席位必须是 file-protocol
-(Get-Content D:\AI\workspace\dsh\agentmesh\.mesh\agents\dsh-01.json -Raw | ConvertFrom-Json).mcp_inject
+(Get-Content <PROJECT>\.mesh\agents\dsh-01.json -Raw | ConvertFrom-Json).mcp_inject
 
 # 3) 共享 node 必须仍是 Medium
-icacls "D:\AI\Hermes\tools\node-26.7.0-win32-x64\node.exe" | Select-String "Mandatory"
+icacls "<HERMES_HOME>\tools\node-26.7.0-win32-x64\node.exe" | Select-String "Mandatory"
 
 # 4) 项目目录要有 HP 的 (F) 或 (M)
-icacls "D:\AI\workspace\dsh\agentmesh" | Select-String "HP:"
+icacls "<PROJECT>" | Select-String "HP:"
 ```
 
 本次实测（普通 PowerShell）：
@@ -229,7 +229,7 @@ SUMMARY: 4/4 通过 / PASS / exit=0
 
 ## 附：本文档的一次纠错（留痕）
 
-本文档初版把"`D:\AI\DSH\profiles` 建目录 + 打 Low 标签"写成了 §1 的修法。那是误判：
+本文档初版把"`<DSH_HOME>\profiles` 建目录 + 打 Low 标签"写成了 §1 的修法。那是误判：
 
 - 那个目录存在期间一直是空的，DSH 从未往里写过，现已删除；
 - CLI 的 seat 目录是 `$DSH_HOME`（或 `~/.dsh`）下的 `profiles/<seat>`，权限本来就正常；

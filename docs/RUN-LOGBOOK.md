@@ -3,7 +3,7 @@
 > 本文件由 `tests/prove/export-logbook.ts` 从 `.mesh/` 直接导出，不含手写内容。
 
 - 导出时间：2026-10-28T14:06:07.435Z
-- 项目目录：`D:\AI\workspace\dsh\mesh-demo\linkboard`
+- 项目目录：`<WORKSPACE>\dsh\mesh-demo\linkboard`
 - 主分支：`main`，基线 `e3a5d392`
 - 初始化：2026-10-28T12:13:09.791Z
 

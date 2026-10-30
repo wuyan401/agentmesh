@@ -47,7 +47,7 @@ planBudget(1000, { rent: 400, food: 150 });    // remaining = 450
 node --test --test-isolation=none
 ```
 
-（本机 Node 不在 PATH，可用运行时：`D:\AI\DSH\apps\desktop\.desktop-build\development\home\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`）
+（本机 Node 不在 PATH，可用运行时：`<DSH_HOME>\apps\desktop\.desktop-build\development\home\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe`）
 
 ## 小提示
 

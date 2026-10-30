@@ -1,7 +1,7 @@
 """Stress test for the acceptance state file: proves the lock is load-bearing.
 
 The bug this pins down (seen for real in M5): two processes wrote
-`D:\\AI\\Hermes\\cache\\agentmesh-v2\\state.json` with read-modify-write and no
+`<HERMES_HOME>\\cache\\agentmesh-v2\\state.json` with read-modify-write and no
 coordination, so the driver parking a milestone overwrote a verdict that had
 landed milliseconds earlier. The signature had to be re-typed by hand.
 

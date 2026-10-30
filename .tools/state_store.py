@@ -42,7 +42,7 @@ import os
 import secrets
 import time
 
-DEFAULT_STATE_FILE = r"D:\AI\Hermes\cache\agentmesh-v2\state.json"
+DEFAULT_STATE_FILE = r"<HERMES_HOME>\cache\agentmesh-v2\state.json"
 
 LOCK_TIMEOUT_S = 15.0
 POLL_S = 0.002

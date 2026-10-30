@@ -14,8 +14,8 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
-$repo = "D:\AI\workspace\dsh\agentmesh"
-$scratch = "D:\AI\workspace\dsh\.mesh-v2-m1"
+$repo = "<PROJECT>"
+$scratch = "<WORKSPACE>\dsh\.mesh-v2-m1"
 $meshCli = Join-Path $repo 'cli\mesh.ts'
 
 function mesh {

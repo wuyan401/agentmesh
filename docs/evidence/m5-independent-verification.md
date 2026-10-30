@@ -5,7 +5,7 @@ DSH 的 M5 交付里，8 张演练卡的 `rejection_count` 全是 0 —— 它�
 
 ## 环境
 
-`D:\AI\workspace\_m5proj`，三个 agent，画像各不相同，全部 `manual_locked=true`：
+`<WORKSPACE>\_m5proj`，三个 agent，画像各不相同，全部 `manual_locked=true`：
 
 | agent | 质量分 | 花费 | 可靠性 | 定位 |
 |---|---|---|---|---|

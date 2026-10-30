@@ -14,7 +14,7 @@ was able to run real shell commands and produce a committed artifact.
 | Check | Evidence |
 | --- | --- |
 | Worker started with an identity | `hub.hello()` returned session `S-000010`, agent `dsh-01`, role `executor` |
-| Worker got a sandbox | worktree `D:\AI\workspace\dsh\agentmesh\.mesh\worktrees\T-000003` |
+| Worker got a sandbox | worktree `<PROJECT>\.mesh\worktrees\T-000003` |
 | Shell commands execute | `git branch --show-current` → `mesh/T-000003`; `git log --oneline -3` returned commits |
 | Toolchain is usable | `node --version` → `v26.7.0` |
 | Worker owns a real process env | `$env:USERNAME` → `HP` |

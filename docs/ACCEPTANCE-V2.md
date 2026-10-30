@@ -601,7 +601,7 @@ $ mesh mission export M-000001 --out .mesh-v2-m1\exported
   report.md  tasks.json  timeline.md
 ```
 
-**d) 观察台**（`mesh serve --dir D:\AI\workspace\dsh\.mesh-v2-m1`）
+**d) 观察台**（`mesh serve --dir <WORKSPACE>\dsh\.mesh-v2-m1`）
 
 `GET /api/missions` → `missions=1, M-000001 completed 3/3`；`GET /api/missions/M-000001` →
 `timeline=53, tasks=3, files=[report.md,timeline.md,tasks.json]`。
@@ -666,7 +666,7 @@ $ mesh mission export M-000001 --out .mesh-v2-m1\exported
 
 | 席位 | 是什么 | verify 实测 |
 |---|---|---|
-| `dsh-01` | DSH headless（`node D:\AI\DSH\apps\cli\lib\bin.js --profile headless`） | `hello 已到达`，35.1s |
+| `dsh-01` | DSH headless（`node <DSH_HOME>\apps\cli\lib\bin.js --profile headless`） | `hello 已到达`，35.1s |
 | `dsh-02` | 第二个 DSH 席位，本 mission 的 lead | `hello 已到达`，43.3s |
 | `hermes-01` | Hermes Agent v0.21.5（`hermes.exe`） | `hello 已到达`，74.8s |
 | `mesh-human` | 人类 operator（我），做 lead / reviewer | — |
